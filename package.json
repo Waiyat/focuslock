@@ -1,0 +1,37 @@
+{
+  "name": "focuslock-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "backend"
+  ],
+  "scripts": {
+    "start": "npm --prefix apps/focuslock start",
+    "dev": "npm --prefix apps/focuslock dev",
+    "build": "npm --prefix apps/focuslock build",
+    "ios": "npm --prefix apps/focuslock ios",
+    "android": "npm --prefix apps/focuslock android",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:build": "npm --prefix backend run build",
+    "backend:start": "npm --prefix backend run start"
+  },
+  "dependencies": {
+    "expo-asset": "~57.0.18",
+    "expo-constants": "~57.0.19",
+    "expo-font": "~57.0.4",
+    "expo-image": "~57.0.5",
+    "expo-linking": "~57.0.11",
+    "expo-notifications": "~57.0.21",
+    "expo-router": "~57.0.23",
+    "expo-secure-store": "~57.0.4",
+    "expo-splash-screen": "~57.0.9",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "babel-preset-expo": "^57.0.13",
+    "tailwindcss": "^3.4.19"
+  }
+}
