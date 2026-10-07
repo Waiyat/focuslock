@@ -23,7 +23,7 @@ function getNativeNotificationPlayer() {
     try {
       const { createAudioPlayer } = require('expo-audio');
       if (createAudioPlayer) {
-        nativeNotificationPlayer = createAudioPlayer(require('../../assets/notification-chime.wav'));
+        nativeNotificationPlayer = createAudioPlayer(require('../../assets/notification_chime.wav'));
       }
     } catch {
       // expo-audio not loaded

@@ -8,7 +8,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "notification": {
-      "icon": "./assets/logo.png",
+      "icon": "./assets/icon.png",
       "color": "#09090b",
       "iosDisplayInForeground": true
     },
@@ -16,9 +16,9 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/logo.png",
+          "icon": "./assets/icon.png",
           "color": "#09090b",
-          "sounds": ["./assets/notification-chime.wav"]
+          "sounds": ["./assets/notification_chime.wav"]
         }
       ]
     ],
