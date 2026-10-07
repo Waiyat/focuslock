@@ -1,6 +1,22 @@
-// Database client & schema configuration placeholder (e.g. PostgreSQL / Prisma / Drizzle)
-export const db = {
-  connect: async () => {
-    console.log('Database connected (placeholder)');
+import dotenv from 'dotenv';
+dotenv.config();
+
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
+}
+
+/**
+ * Service-role Supabase client for the backend.
+ * This bypasses Row Level Security — use ONLY server-side, never expose to clients.
+ */
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
   },
-};
+});

@@ -16,6 +16,27 @@ interface ToastProps {
   duration?: number;
 }
 
+const TOAST_CONFIG = {
+  error: {
+    bg: '#991b1b',
+    border: '#b91c1c',
+    indicator: '#fca5a5',
+    icon: '✕',
+  },
+  success: {
+    bg: '#14532d',
+    border: '#16a34a',
+    indicator: '#86efac',
+    icon: '✓',
+  },
+  info: {
+    bg: '#1e3a5f',
+    border: '#2563eb',
+    indicator: '#93c5fd',
+    icon: 'ℹ',
+  },
+};
+
 export function Toast({
   visible,
   message,
@@ -76,7 +97,7 @@ export function Toast({
 
   if (!visible) return null;
 
-  const isError = type === 'error';
+  const config = TOAST_CONFIG[type] ?? TOAST_CONFIG.info;
 
   return (
     <Animated.View
@@ -93,19 +114,21 @@ export function Toast({
         onPress={handleDismiss}
         style={[
           styles.toastContainer,
-          isError ? styles.toastError : styles.toastInfo,
+          {
+            backgroundColor: config.bg,
+            borderColor: config.border,
+          },
         ]}
       >
-        {/* Subtle accent indicator */}
-        <View
-          style={[
-            styles.indicator,
-            { backgroundColor: isError ? '#f43f5e' : '#3b82f6' },
-          ]}
-        />
+        {/* Icon badge */}
+        <View style={[styles.iconBadge, { backgroundColor: config.border }]}>
+          <Text style={styles.iconText}>{config.icon}</Text>
+        </View>
         <Text style={styles.toastText} numberOfLines={2}>
           {message}
         </Text>
+        {/* Dismiss hint */}
+        <Text style={[styles.dismissHint, { color: config.indicator }]}>✕</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -115,54 +138,58 @@ const styles = StyleSheet.create({
   toastWrapper: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 56 : 28,
-    left: 20,
-    right: 20,
+    left: 16,
+    right: 16,
     zIndex: 9999,
     alignItems: 'center',
   },
   toastContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#09090b',
-    borderColor: '#27272a',
     borderWidth: 1,
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 440,
+    gap: 10,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.25,
+        shadowOpacity: 0.35,
         shadowRadius: 16,
       },
       android: {
-        elevation: 8,
+        elevation: 10,
       },
     }),
   },
-  toastError: {
-    backgroundColor: '#09090b',
-    borderColor: '#3f3f46',
+  iconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  toastInfo: {
-    backgroundColor: '#09090b',
-    borderColor: '#27272a',
-  },
-  indicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 10,
+  iconText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
   },
   toastText: {
     flex: 1,
-    color: '#ffffff',
+    color: '#f1f5f9',
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: 0.1,
     lineHeight: 18,
+  },
+  dismissHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    opacity: 0.7,
+    flexShrink: 0,
   },
 });

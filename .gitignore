@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Expo & Builds
+.expo/
+apps/focuslock/dist/
+web-build/
+*.tsbuildinfo
+
+# IDE & Editor
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+**/.DS_Store
+*.pem
+
+# Local Environment
+.env.local
+.env*.local
+backend/.env
+*.backup
+
+# Solopreneur local runtime data
+.solopreneur/

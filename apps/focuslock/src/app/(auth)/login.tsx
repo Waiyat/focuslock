@@ -15,32 +15,29 @@ import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Input } from '../../components/ui/Input';
 import { Toast } from '../../components/ui/Toast';
+import { supabase } from '../../lib/supabase';
+import { playErrorFeedback } from '../../lib/feedback';
+import { isOnboardingComplete } from '../../lib/onboarding';
 
 export default function LoginScreen() {
   const router = useRouter();
 
-  // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Toast notification state
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
     type?: 'error' | 'info' | 'success';
-  }>({
-    visible: false,
-    message: '',
-    type: 'error',
-  });
+  }>({ visible: false, message: '', type: 'error' });
 
-  // Independent input shake animation drivers
   const emailShakeAnim = useRef(new Animated.Value(0)).current;
   const passwordShakeAnim = useRef(new Animated.Value(0)).current;
 
   const triggerInputShake = (anim: Animated.Value) => {
+    playErrorFeedback();
     anim.setValue(0);
     Animated.sequence([
       Animated.timing(anim, { toValue: 12, duration: 40, useNativeDriver: true }),
@@ -56,64 +53,101 @@ export default function LoginScreen() {
     setToast({ visible: true, message, type });
   };
 
-  const validate = () => {
-    let isValid = true;
-    const isEmailMissing = !email.trim();
-    const isEmailInvalid = !isEmailMissing && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-    const isPasswordMissing = !password;
-    const isPasswordTooShort = !isPasswordMissing && password.length < 6;
+  const handleEmailChange = (text: string) => {
+    if (/\s/.test(text)) {
+      playErrorFeedback();
+      triggerInputShake(emailShakeAnim);
+      showToast('Spaces are not allowed in email addresses.');
+      setEmail(text.replace(/\s/g, ''));
+    } else {
+      setEmail(text);
+    }
+  };
 
-    if (isEmailMissing) {
+  const handlePasswordChange = (text: string) => {
+    if (/\s/.test(text)) {
+      playErrorFeedback();
+      triggerInputShake(passwordShakeAnim);
+      showToast('Spaces are not allowed in passwords.');
+      setPassword(text.replace(/\s/g, ''));
+    } else {
+      setPassword(text);
+    }
+  };
+
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const isPasswordValid = password.length >= 6;
+  const isFormValid = isEmailValid && isPasswordValid;
+
+  const validate = () => {
+    let valid = true;
+
+    if (!email.trim()) {
       triggerInputShake(emailShakeAnim);
       showToast('Please enter your email address.');
-      isValid = false;
-    } else if (isEmailInvalid) {
+      valid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       triggerInputShake(emailShakeAnim);
-      showToast('Please enter a valid email address format.');
-      isValid = false;
+      showToast('Please enter a valid email address.');
+      valid = false;
     }
 
-    if (isPasswordMissing) {
+    if (!password) {
       triggerInputShake(passwordShakeAnim);
-      if (isValid) {
-        showToast('Please enter your password.');
-      }
-      isValid = false;
-    } else if (isPasswordTooShort) {
+      if (valid) showToast('Please enter your password.');
+      valid = false;
+    } else if (password.length < 6) {
       triggerInputShake(passwordShakeAnim);
-      if (isValid) {
-        showToast('Password must be at least 6 characters.');
-      }
-      isValid = false;
+      if (valid) showToast('Password must be at least 6 characters.');
+      valid = false;
     }
 
-    return isValid;
+    return valid;
   };
 
   const handleSignIn = async () => {
     if (!validate()) return;
-
     setIsLoading(true);
-    // UI test flow before backend integration
-    setTimeout(() => {
-      setIsLoading(false);
-      showToast(`Logged in successfully as ${email.trim()}`, 'success');
-    }, 600);
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+
+    setIsLoading(false);
+
+    if (error) {
+      if (error.message.toLowerCase().includes('invalid login')) {
+        triggerInputShake(emailShakeAnim);
+        triggerInputShake(passwordShakeAnim);
+        showToast('Incorrect email or password. Please try again.');
+      } else if (error.message.toLowerCase().includes('email not confirmed')) {
+        showToast('Please verify your email address before signing in.', 'info');
+      } else {
+        showToast(error.message ?? 'Sign in failed. Please try again.');
+      }
+      return;
+    }
+
+    // Success: gate on onboarding before going to dashboard
+    const onboarded = await isOnboardingComplete(data?.user);
+    router.replace(onboarded ? '/dashboard' : '/onboarding');
   };
 
-  const handleGoogleSignIn = () => {
-    showToast('Connecting to Google OAuth...', 'info');
+  const handleGoogleSignIn = async () => {
+    showToast('Google OAuth requires native configuration. Coming soon.', 'info');
+    // TODO: wire Supabase Google OAuth with expo-auth-session
+    // const { data, error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
   };
 
   const handleForgotPassword = () => {
-    showToast('Password recovery instructions sent if email exists.', 'info');
+    router.push('/(auth)/forgot-password');
   };
 
   return (
     <View style={styles.screenContainer}>
-      <RNStatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <RNStatusBar barStyle="light-content" backgroundColor="#09090b" />
 
-      {/* Modern sliding Toast Notification */}
       <Toast
         visible={toast.visible}
         message={toast.message}
@@ -121,7 +155,6 @@ export default function LoginScreen() {
         onDismiss={() => setToast((prev) => ({ ...prev, visible: false }))}
       />
 
-      {/* Subtle ambient gradient spheres for frosted depth */}
       <View style={styles.ambientBlobTop} />
       <View style={styles.ambientBlobBottom} />
 
@@ -135,23 +168,18 @@ export default function LoginScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* ── Top Bar: Back & Brand ── */}
             <View style={styles.topBar}>
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => router.back()}
                 style={styles.backButton}
               >
-                <Text style={styles.backButtonText}>Back</Text>
+                <Text style={styles.backButtonText}>← Back</Text>
               </TouchableOpacity>
-
               <Text style={styles.brandTag}>FOCUSLOCK</Text>
             </View>
 
-            {/* ── Frosted Glass Form Card (Stable container) ── */}
             <View style={styles.glassCard}>
-
-              {/* Title & Description */}
               <View style={styles.headerBlock}>
                 <Text style={styles.title}>Sign In</Text>
                 <Text style={styles.subtitle}>
@@ -159,14 +187,14 @@ export default function LoginScreen() {
                 </Text>
               </View>
 
-              {/* Official Google Sign-In Button */}
+              {/* Google Sign-In */}
               <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={handleGoogleSignIn}
                 style={styles.googleButton}
               >
                 <Image
-                  source={require('../../../assets/google-logo.png')}
+                  source={require('../../../assets/google-logo.webp')}
                   style={styles.googleLogo}
                   contentFit="contain"
                 />
@@ -180,21 +208,19 @@ export default function LoginScreen() {
                 <View style={styles.dividerLine} />
               </View>
 
-              {/* Form Inputs (Individual field shake physics) */}
+              {/* Inputs */}
               <View style={styles.formFields}>
-                {/* Email Input with independent shake */}
-                <Animated.View
-                  style={{ transform: [{ translateX: emailShakeAnim }] }}
-                >
+                <Animated.View style={{ transform: [{ translateX: emailShakeAnim }] }}>
                   <Input
-                    variant="light"
+                    variant="dark"
                     label="Email Address"
                     placeholder="name@company.com"
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    textContentType="emailAddress"
                     value={email}
-                    onChangeText={setEmail}
+                    onChangeText={handleEmailChange}
                     leftIcon={
                       <Image
                         source={require('../../../assets/mail.svg')}
@@ -205,19 +231,17 @@ export default function LoginScreen() {
                   />
                 </Animated.View>
 
-                {/* Password Input with independent shake */}
-                <Animated.View
-                  style={{ transform: [{ translateX: passwordShakeAnim }] }}
-                >
+                <Animated.View style={{ transform: [{ translateX: passwordShakeAnim }] }}>
                   <Input
-                    variant="light"
+                    variant="dark"
                     label="Password"
                     placeholder="Enter your password"
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     autoCorrect={false}
+                    textContentType="password"
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={handlePasswordChange}
                     rightActionText="Forgot password?"
                     onRightActionPress={handleForgotPassword}
                     leftIcon={
@@ -249,34 +273,26 @@ export default function LoginScreen() {
                 </Animated.View>
               </View>
 
-              {/* Primary Action Button */}
+              {/* Primary Action */}
               <TouchableOpacity
                 activeOpacity={0.88}
                 onPress={handleSignIn}
-                disabled={isLoading}
-                style={[
-                  styles.primaryButton,
-                  isLoading && styles.primaryButtonDisabled,
-                ]}
+                disabled={!isFormValid || isLoading}
+                style={[styles.primaryButton, (!isFormValid || isLoading) && styles.primaryButtonDisabled]}
               >
                 <Text style={styles.primaryButtonText}>
                   {isLoading ? 'Signing In...' : 'Sign In'}
                 </Text>
               </TouchableOpacity>
 
-              {/* Card Footer: Switch to Register */}
+              {/* Footer */}
               <View style={styles.footerRow}>
                 <Text style={styles.footerText}>Don't have an account?</Text>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => router.push('/(auth)/register')}
-                >
+                <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/(auth)/register')}>
                   <Text style={styles.footerLink}>Create an account</Text>
                 </TouchableOpacity>
               </View>
-
             </View>
-
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -285,224 +301,57 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  screenContainer: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  screenContainer: { flex: 1, backgroundColor: '#09090b' },
   ambientBlobTop: {
-    position: 'absolute',
-    top: -60,
-    left: -40,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(219, 234, 254, 0.7)',
-    opacity: 0.8,
+    position: 'absolute', top: -60, left: -40,
+    width: 260, height: 260, borderRadius: 130,
+    backgroundColor: 'rgba(118, 247, 86, 0.06)',
   },
   ambientBlobBottom: {
-    position: 'absolute',
-    bottom: -80,
-    right: -50,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: 'rgba(243, 232, 255, 0.65)',
-    opacity: 0.8,
+    position: 'absolute', bottom: -80, right: -50,
+    width: 280, height: 280, borderRadius: 140,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
-  safeArea: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    justifyContent: 'center',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingHorizontal: 4,
-  },
+  safeArea: { flex: 1 },
+  keyboardView: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 20, paddingVertical: 12, justifyContent: 'center' },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, paddingHorizontal: 4 },
   backButton: {
-    backgroundColor: '#ffffff',
-    borderColor: '#e2e8f0',
-    borderWidth: 1,
-    borderRadius: 100,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
+    backgroundColor: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.16)', borderWidth: 1,
+    borderRadius: 100, paddingHorizontal: 14, paddingVertical: 7,
   },
-  backButtonText: {
-    color: '#334155',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  brandTag: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 2.5,
-  },
+  backButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '600' },
+  brandTag: { color: '#71717a', fontSize: 11, fontWeight: '700', letterSpacing: 2.5 },
   glassCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    borderColor: 'rgba(255, 255, 255, 0.95)',
-    borderWidth: 1.5,
-    borderRadius: 30,
-    paddingHorizontal: 24,
-    paddingVertical: 28,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#0f172a',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.08,
-        shadowRadius: 28,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
+    backgroundColor: 'rgba(18, 18, 24, 0.88)', borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1.5, borderRadius: 30, paddingHorizontal: 24, paddingVertical: 28,
+    ...Platform.select({ ios: { shadowColor: '#000000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.4, shadowRadius: 28 }, android: { elevation: 6 } }),
   },
-  headerBlock: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#0f172a',
-    letterSpacing: -0.6,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 6,
-    lineHeight: 21,
-  },
+  headerBlock: { marginBottom: 24 },
+  title: { fontSize: 30, fontWeight: '800', color: '#ffffff', letterSpacing: -0.6 },
+  subtitle: { fontSize: 14, color: '#a1a1aa', marginTop: 6, lineHeight: 21 },
   googleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: '#e2e8f0',
-    borderWidth: 1.5,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)', borderColor: 'rgba(255, 255, 255, 0.14)', borderWidth: 1.5,
+    borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 20,
   },
-  googleLogo: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
-  },
-  googleButtonText: {
-    color: '#1e293b',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#e2e8f0',
-  },
-  dividerText: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    paddingHorizontal: 12,
-  },
-  formFields: {
-    gap: 16,
-    marginBottom: 24,
-  },
-  inputIcon: {
-    width: 18,
-    height: 18,
-  },
-  eyeButton: {
-    padding: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  eyeIcon: {
-    width: 20,
-    height: 20,
-  },
+  googleLogo: { width: 20, height: 20, marginRight: 10 },
+  googleButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '600', letterSpacing: 0.1 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.12)' },
+  dividerText: { color: '#71717a', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, paddingHorizontal: 12 },
+  formFields: { gap: 16, marginBottom: 24 },
+  inputIcon: { width: 18, height: 18 },
+  eyeButton: { padding: 4, justifyContent: 'center', alignItems: 'center' },
+  eyeIcon: { width: 20, height: 20, tintColor: '#a1a1aa' },
   primaryButton: {
-    backgroundColor: '#09090b',
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#09090b',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.22,
-        shadowRadius: 14,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
+    backgroundColor: '#76F756', borderRadius: 16, paddingVertical: 16,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#76F756', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 18, elevation: 8,
   },
-  primaryButtonDisabled: {
-    opacity: 0.65,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 22,
-    gap: 6,
-  },
-  footerText: {
-    color: '#64748b',
-    fontSize: 13,
-  },
-  footerLink: {
-    color: '#09090b',
-    fontSize: 13,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
+  primaryButtonDisabled: { opacity: 0.60 },
+  primaryButtonText: { color: '#09090b', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
+  footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 22, gap: 6 },
+  footerText: { color: '#a1a1aa', fontSize: 13 },
+  footerLink: { color: '#76F756', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
 });

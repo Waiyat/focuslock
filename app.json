@@ -4,5 +4,8 @@
     "expo-secure-store",
     "expo-font",
     "expo-asset"
-  ]
+  ],
+  "android": {
+    "package": "com.waiyat.focuslock"
+  }
 }

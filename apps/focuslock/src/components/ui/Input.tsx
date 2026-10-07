@@ -54,7 +54,7 @@ export function Input({
               <Text
                 style={[
                   styles.rightActionText,
-                  { color: isLight ? '#2563eb' : '#60a5fa' },
+                  { color: isLight ? '#2563eb' : '#76F756' },
                 ]}
               >
                 {rightActionText}
@@ -86,7 +86,7 @@ export function Input({
           ]}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          selectionColor={isLight ? '#2563eb' : '#60a5fa'}
+          selectionColor={isLight ? '#2563eb' : '#76F756'}
           {...props}
         />
 
@@ -163,8 +163,19 @@ const styles = StyleSheet.create({
     }),
   },
   focusedDark: {
-    borderColor: '#a1a1aa',
+    borderColor: '#76F756',
     backgroundColor: '#18181b',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#76F756',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.20,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   errorBorder: {
     borderColor: '#ef4444',

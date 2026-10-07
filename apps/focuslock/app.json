@@ -7,20 +7,68 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "notification": {
+      "icon": "./assets/logo.png",
+      "color": "#09090b",
+      "iosDisplayInForeground": true
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#09090b",
+          "sounds": ["./assets/notification-chime.wav"]
+        }
+      ]
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.focuslock.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["fetch", "remote-notification"],
+        "LSApplicationQueriesSchemes": [
+          "instagram",
+          "snssdk1233",
+          "twitter",
+          "fb",
+          "snapchat",
+          "reddit",
+          "barcelona",
+          "pinterest",
+          "linkedin",
+          "youtube",
+          "nflx",
+          "twitch",
+          "spotify",
+          "whatsapp",
+          "tg",
+          "discord",
+          "fb-messenger",
+          "googlechrome",
+          "firefox",
+          "brave"
+        ]
+      }
     },
     "android": {
+      "package": "com.focuslock.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["RECEIVE_BOOT_COMPLETED", "VIBRATE", "QUERY_ALL_PACKAGES"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "focuslock-app"
+      }
     }
   }
 }
