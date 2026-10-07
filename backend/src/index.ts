@@ -29,8 +29,10 @@ app.use('/api/screen-time', screenTimeRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/feedback', feedbackRouter);
 
-app.listen(port, () => {
-  console.log(`FocusLock Backend listening on port ${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`FocusLock Backend listening on port ${port}`);
+  });
+}
 
 export default app;
