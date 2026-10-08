@@ -1698,13 +1698,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/notifications'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#fee2e2' }]}>
-                        <Image
-                          source={require('../../assets/settings/notifications.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/notifications.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <View>
                         <Text style={styles.settingLabel}>Notifications</Text>
                         <Text style={styles.settingSubLabel}>Alerts, banners & sounds</Text>
@@ -1719,13 +1717,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/focus'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#dbeafe' }]}>
-                        <Image
-                          source={require('../../assets/settings/focus.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/focus.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <View>
                         <Text style={styles.settingLabel}>Focus Preferences</Text>
                         <Text style={styles.settingSubLabel}>Strictness & window controls</Text>
@@ -1740,13 +1736,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/privacy'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#dcfce7' }]}>
-                        <Image
-                          source={require('../../assets/settings/privacy.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/privacy.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <View>
                         <Text style={styles.settingLabel}>Privacy & Security</Text>
                         <Text style={styles.settingSubLabel}>Data & diagnostics</Text>
@@ -1765,13 +1759,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/help'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.16)' : '#ffedd5' }]}>
-                        <Image
-                          source={require('../../assets/settings/help.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/help.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <View>
                         <Text style={styles.settingLabel}>Help & FAQ</Text>
                         <Text style={styles.settingSubLabel}>Guides & common questions</Text>
@@ -1786,13 +1778,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/feedback'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.16)' : '#f3e8ff' }]}>
-                        <Image
-                          source={require('../../assets/settings/feedback.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/feedback.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <View>
                         <Text style={styles.settingLabel}>Send Feedback</Text>
                         <Text style={styles.settingSubLabel}>Report issues or suggest features</Text>
@@ -1807,13 +1797,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/terms'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(100, 116, 139, 0.16)' : '#f1f5f9' }]}>
-                        <Image
-                          source={require('../../assets/settings/terms.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/terms.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <Text style={styles.settingLabel}>Terms of Service</Text>
                     </View>
                     <Text style={styles.settingChevron}>›</Text>
@@ -1825,13 +1813,11 @@ export default function DashboardScreen() {
                     onPress={() => { playLightFeedback(); router.push('/settings/privacy-policy'); }}
                   >
                     <View style={styles.settingIconRow}>
-                      <View style={[styles.settingIconBadge, { backgroundColor: isDark ? 'rgba(100, 116, 139, 0.16)' : '#f1f5f9' }]}>
-                        <Image
-                          source={require('../../assets/settings/privacy-policy.webp')}
-                          style={styles.settingIconImg}
-                          contentFit="contain"
-                        />
-                      </View>
+                      <Image
+                        source={require('../../assets/settings/privacy-policy.svg')}
+                        style={styles.settingIconImg}
+                        contentFit="contain"
+                      />
                       <Text style={styles.settingLabel}>Privacy Policy</Text>
                     </View>
                     <Text style={styles.settingChevron}>›</Text>
@@ -2754,18 +2740,16 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     flex: 1,
   },
   settingIconBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: R.xs,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: 1,
-    borderColor: C.border,
+    width: 32,
+    height: 32,
+    borderRadius: 7.5,
+    overflow: 'hidden',
   },
   settingIconImg: {
-    width: 18,
-    height: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 7.5,
+    overflow: 'hidden',
   },
   settingLabel: {
     fontSize: 15,

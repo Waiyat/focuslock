@@ -32,15 +32,15 @@ interface Section {
 }
 
 const SETTINGS_ICONS = {
-  account: require('../../../assets/settings/account.webp'),
-  notifications: require('../../../assets/settings/notifications.webp'),
-  privacy: require('../../../assets/settings/privacy.webp'),
-  focus: require('../../../assets/settings/focus.webp'),
-  help: require('../../../assets/settings/help.webp'),
-  feedback: require('../../../assets/settings/feedback.webp'),
-  terms: require('../../../assets/settings/terms.webp'),
-  privacyPolicy: require('../../../assets/settings/privacy-policy.webp'),
-  signout: require('../../../assets/settings/signout.webp'),
+  account: require('../../../assets/settings/account.svg'),
+  notifications: require('../../../assets/settings/notifications.svg'),
+  privacy: require('../../../assets/settings/privacy.svg'),
+  focus: require('../../../assets/settings/focus.svg'),
+  help: require('../../../assets/settings/help.svg'),
+  feedback: require('../../../assets/settings/feedback.svg'),
+  terms: require('../../../assets/settings/terms.svg'),
+  privacyPolicy: require('../../../assets/settings/privacy-policy.svg'),
+  signout: require('../../../assets/settings/signout.svg'),
 };
 
 function SettingsRow({
@@ -71,7 +71,7 @@ function SettingsRow({
         <Image
           source={item.icon}
           style={styles.rowIcon}
-          contentFit="cover"
+          contentFit="contain"
           transition={150}
         />
         <View style={styles.rowBody}>
@@ -581,9 +581,9 @@ function createSettingsStyles(C: ThemeColors, isDark: boolean) {
     rowFirst: {},
     rowLast: {},
     rowIcon: {
-      width: 30,
-      height: 30,
-      borderRadius: 7,
+      width: 32,
+      height: 32,
+      borderRadius: 7.5,
       overflow: 'hidden',
     },
     rowBody: {
@@ -617,7 +617,7 @@ function createSettingsStyles(C: ThemeColors, isDark: boolean) {
     insetDivider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: C.border,
-      marginLeft: 60,
+      marginLeft: 62,
     },
 
     // Footer
