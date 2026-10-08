@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 let nativeErrorPlayer: any = null;
-let nativeNotificationPlayer: any = null;
 
 function getNativeErrorPlayer() {
   if (Platform.OS !== 'web' && !nativeErrorPlayer) {
@@ -16,20 +15,6 @@ function getNativeErrorPlayer() {
     }
   }
   return nativeErrorPlayer;
-}
-
-function getNativeNotificationPlayer() {
-  if (Platform.OS !== 'web' && !nativeNotificationPlayer) {
-    try {
-      const { createAudioPlayer } = require('expo-audio');
-      if (createAudioPlayer) {
-        nativeNotificationPlayer = createAudioPlayer(require('../../assets/notification_chime.wav'));
-      }
-    } catch {
-      // expo-audio not loaded
-    }
-  }
-  return nativeNotificationPlayer;
 }
 
 /**

@@ -4,22 +4,13 @@ import { isRunningInExpoGo } from 'expo';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
-// Note: playNotificationFeedback intentionally removed — OS handles notification sounds.
-
-export interface InAppNotificationPayload {
-  id: string;
-  title: string;
-  body: string;
-  type?: 'locked' | 'warning' | 'info';
-  timestamp: string;
-  data?: Record<string, any>;
-}
-
-type NotificationListener = (notification: InAppNotificationPayload) => void;
-const listeners = new Set<NotificationListener>();
 
 let isInitialized = false;
 let _Notifications: typeof NotificationsType | null = null;
+
+// =======================================================================
+// 1. SAFE LAZY LOADING FOR EXPO NOTIFICATIONS
+// =======================================================================
 
 /**
  * Checks if running inside Expo Go on Android where remote push was removed in SDK 53+.
@@ -34,8 +25,7 @@ function isExpoGoAndroid(): boolean {
 }
 
 /**
- * Lazily load expo-notifications only when supported and safe to avoid
- * Expo Go Android SDK 53+ module-init crash (DevicePushTokenAutoRegistration).
+ * Lazily loads expo-notifications only when supported and safe.
  */
 function getNotifications(): typeof NotificationsType | null {
   if (isExpoGoAndroid()) {
@@ -52,47 +42,74 @@ function getNotifications(): typeof NotificationsType | null {
   return _Notifications;
 }
 
+// =======================================================================
+// 2. NATIVE NOTIFICATION INITIALIZATION & CHANNELS
+// =======================================================================
+
+export const NOTIFICATION_CHANNELS = {
+  ENFORCEMENT: 'focuslock-enforcement',
+  REMINDERS: 'focuslock-reminders',
+} as const;
+
 /**
- * Configure notifications handler and create Android notification channel.
+ * Configures the native OS notification presentation handler and registers
+ * Android notification channels.
+ *
+ * NOTE: The OS owns the notification banners, lock screen display, notification
+ * center shade, and audio/vibration behavior.
  */
-export async function initNotifications() {
+export async function initNotifications(): Promise<void> {
   if (isInitialized) return;
   isInitialized = true;
 
   try {
     const notif = getNotifications();
     if (!notif) {
-      console.info('[Notifications] Running in Expo Go on Android — remote push APIs safely bypassed.');
+      console.info('[Notifications] Running in Expo Go on Android — native push APIs safely bypassed.');
       return;
     }
 
+    // Configure foreground presentation: let the OS show the native banner and play sound!
     notif.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
-        shouldPlaySound: false, // OS manages notification sounds; we don't duplicate them in-app
-        shouldSetBadge: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
         shouldShowBanner: true,
         shouldShowList: true,
         priority: notif.AndroidNotificationPriority.HIGH,
       }),
     });
 
+    // Configure Android channels
     if (Platform.OS === 'android') {
-      await notif.setNotificationChannelAsync('focuslock-enforcement', {
-        name: 'FocusLock Enforcement Alerts',
+      // 1. High-priority enforcement channel (limit warnings and app lockouts)
+      await notif.setNotificationChannelAsync(NOTIFICATION_CHANNELS.ENFORCEMENT, {
+        name: 'Enforcement & Limit Alerts',
+        description: 'Instant alerts when daily limits are approaching or exhausted.',
         importance: notif.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#84cc16',
         lockscreenVisibility: notif.AndroidNotificationVisibility.PUBLIC,
-        // No custom sound — the OS default channel sound is used
-      }).catch(() => {});
-    }
+        bypassDnd: false,
+      }).catch((err) => console.warn('[Notifications] Failed to set enforcement channel:', err));
 
-    await requestNotificationPermissions().catch(() => false);
+      // 2. Default-priority reminders channel (daily reset and window opening)
+      await notif.setNotificationChannelAsync(NOTIFICATION_CHANNELS.REMINDERS, {
+        name: 'Daily Resets & Window Reminders',
+        description: 'Updates regarding daily reset windows and limit resets.',
+        importance: notif.AndroidImportance.DEFAULT,
+        lockscreenVisibility: notif.AndroidNotificationVisibility.PUBLIC,
+      }).catch((err) => console.warn('[Notifications] Failed to set reminders channel:', err));
+    }
   } catch (err) {
-    console.warn('[Notifications] Setup notice:', err);
+    console.warn('[Notifications] Setup error:', err);
   }
 }
+
+// =======================================================================
+// 3. SYSTEM PERMISSIONS & TOKEN REGISTRATION
+// =======================================================================
 
 /**
  * Query current notification permission status safely across platforms.
@@ -100,13 +117,12 @@ export async function initNotifications() {
 export async function getNotificationPermissionStatus(): Promise<string> {
   try {
     const notif = getNotifications();
-    if (!notif) {
-      return 'granted';
-    }
+    if (!notif) return 'granted';
+
     const { status } = await notif.getPermissionsAsync();
     return status;
   } catch (err) {
-    console.warn('[Notifications] Permission check notice:', err);
+    console.warn('[Notifications] Permission check error:', err);
     return 'granted';
   }
 }
@@ -117,9 +133,7 @@ export async function getNotificationPermissionStatus(): Promise<string> {
 export async function requestNotificationPermissions(): Promise<boolean> {
   try {
     const notif = getNotifications();
-    if (!notif) {
-      return true; // Bypass in Expo Go Android to avoid SDK 53 remote push error
-    }
+    if (!notif) return true;
 
     const { status: existingStatus } = await notif.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -138,43 +152,39 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
     return finalStatus === 'granted';
   } catch (err) {
-    console.warn('[Notifications] Permission check notice:', err);
+    console.warn('[Notifications] Permission request error:', err);
     return false;
   }
 }
 
 /**
- * Register this device's Expo push token in the `devices` table.
- * Called once after login. In Expo Go on Android, push tokens are bypassed.
+ * Register this device's Expo push token in the Supabase `devices` table.
  */
 export async function registerPushToken(userId: string): Promise<string | null> {
   try {
     const notif = getNotifications();
     if (!notif) {
-      console.info('[Push] Expo Go on Android detected — push token skipped (use development build for remote push).');
+      console.info('[Push] Expo Go on Android detected — push token skipped.');
       return null;
     }
 
-    // Push tokens only work on real physical devices
     if (!Device.isDevice) {
-      console.info('[Push] Running on simulator — push token skipped');
+      console.info('[Push] Running on simulator/web — push token skipped.');
       return null;
     }
 
     const granted = await requestNotificationPermissions();
     if (!granted) {
-      console.info('[Push] Permission not granted');
+      console.info('[Push] Permission not granted.');
       return null;
     }
 
-    // Get Expo push token safely
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 'focuslock-app';
     const tokenData = await notif.getExpoPushTokenAsync({ projectId }).catch(() => null);
     const token = tokenData?.data;
 
     if (!token) return null;
 
-    // Upsert into `devices` table
     const deviceName = Device.deviceName ?? `${Platform.OS} device`;
     const platform = Platform.OS === 'ios' ? 'ios' : 'android';
 
@@ -207,107 +217,216 @@ export async function registerPushToken(userId: string): Promise<string | null> 
   }
 }
 
-/**
- * Subscribe a component to in-app alerts.
- */
-export function subscribeInAppNotifications(listener: NotificationListener): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+// =======================================================================
+// 4. NATIVE OS NOTIFICATION DISPATCH API
+// =======================================================================
+
+export interface SendNativeNotificationOptions {
+  title: string;
+  body: string;
+  channelId?: string;
+  data?: Record<string, any>;
+  badge?: number;
 }
 
 /**
- * Dispatches BOTH an in-app banner AND a local system push notification.
+ * Triggers a native system notification through the operating system.
+ */
+export async function sendNativeNotification({
+  title,
+  body,
+  channelId = NOTIFICATION_CHANNELS.ENFORCEMENT,
+  data,
+  badge,
+}: SendNativeNotificationOptions): Promise<string | null> {
+  try {
+    const notif = getNotifications();
+    if (!notif) {
+      console.info(`[Native Notification Simulated]: "${title}" - "${body}"`);
+      return null;
+    }
+
+    const notificationId = await notif.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: true, // Native OS sound
+        badge: badge ?? undefined,
+        color: '#09090b',
+        data: data ?? {},
+        ...(Platform.OS === 'android' ? { channelId } : {}),
+      },
+      trigger: null, // deliver immediately
+    });
+
+    return notificationId;
+  } catch (err) {
+    console.warn('[Notifications] Failed to schedule notification:', err);
+    return null;
+  }
+}
+
+// =======================================================================
+// 5. HIGH-LEVEL PRODUCTION NOTIFICATION TRIGGERS
+// =======================================================================
+
+export interface LimitWarningParams {
+  appName: string;
+  remainingMinutes?: number;
+  remainingFormatted?: string;
+}
+
+/**
+ * Triggers a native notification warning the user that an app is approaching its limit.
+ *
+ * Example:
+ * ```ts
+ * notifyLimitWarning({ appName: 'Instagram', remainingMinutes: 10 });
+ * ```
+ */
+export async function notifyLimitWarning(
+  paramsOrAppName: LimitWarningParams | string,
+  legacyRemainingFormatted?: string
+): Promise<string | null> {
+  let appName = '';
+  let timeStr = '';
+
+  if (typeof paramsOrAppName === 'object') {
+    appName = paramsOrAppName.appName;
+    if (paramsOrAppName.remainingFormatted) {
+      timeStr = paramsOrAppName.remainingFormatted;
+    } else if (paramsOrAppName.remainingMinutes !== undefined) {
+      timeStr = `${paramsOrAppName.remainingMinutes}m`;
+    } else {
+      timeStr = 'a few minutes';
+    }
+  } else {
+    appName = paramsOrAppName;
+    timeStr = legacyRemainingFormatted || '5m';
+  }
+
+  return sendNativeNotification({
+    title: `${appName} Approaching Limit`,
+    body: `Only ${timeStr} remaining today. Wrap up before FocusLock locks the app.`,
+    channelId: NOTIFICATION_CHANNELS.ENFORCEMENT,
+    data: { appName, type: 'warning' },
+  });
+}
+
+/** Alias for backwards compatibility */
+export const notifyAppWarning = notifyLimitWarning;
+
+export interface AppLockedParams {
+  appName: string;
+  limitFormatted?: string;
+  resetTime?: string;
+}
+
+/**
+ * Triggers a native notification informing the user that an app has been locked out.
+ */
+export async function notifyAppLocked(
+  paramsOrAppName: AppLockedParams | string,
+  legacyLimitFormatted?: string,
+  legacyResetTime: string = '08:00 AM'
+): Promise<string | null> {
+  let appName = '';
+  let limitStr = 'Limit reached';
+  let resetStr = '08:00 AM';
+
+  if (typeof paramsOrAppName === 'object') {
+    appName = paramsOrAppName.appName;
+    limitStr = paramsOrAppName.limitFormatted || limitStr;
+    resetStr = paramsOrAppName.resetTime || resetStr;
+  } else {
+    appName = paramsOrAppName;
+    limitStr = legacyLimitFormatted || limitStr;
+    resetStr = legacyResetTime;
+  }
+
+  return sendNativeNotification({
+    title: `${appName} Locked`,
+    body: `Daily allowance (${limitStr}) depleted. FocusLock active until ${resetStr}.`,
+    channelId: NOTIFICATION_CHANNELS.ENFORCEMENT,
+    data: { appName, type: 'locked', resetTime: resetStr },
+  });
+}
+
+export interface DailyResetParams {
+  resetTime?: string;
+}
+
+/**
+ * Triggers a native notification informing the user that daily allowances have been refreshed.
+ */
+export async function notifyDailyReset(
+  paramsOrResetTime?: DailyResetParams | string
+): Promise<string | null> {
+  const resetStr =
+    typeof paramsOrResetTime === 'object'
+      ? paramsOrResetTime.resetTime || '08:00 AM'
+      : paramsOrResetTime || '08:00 AM';
+
+  return sendNativeNotification({
+    title: 'Daily Reset Complete',
+    body: `All app counters refreshed. FocusLock enforcement active until tomorrow at ${resetStr}.`,
+    channelId: NOTIFICATION_CHANNELS.REMINDERS,
+    data: { type: 'daily_reset', resetTime: resetStr },
+  });
+}
+
+export interface WindowOpeningParams {
+  windowMinutes?: number;
+  resetTime?: string;
+}
+
+/**
+ * Triggers a native notification reminding the user that the daily adjustment window is open.
+ */
+export async function notifyWindowOpening(
+  params?: WindowOpeningParams
+): Promise<string | null> {
+  const minutes = params?.windowMinutes ?? 20;
+  const resetStr = params?.resetTime ?? '08:00 AM';
+
+  return sendNativeNotification({
+    title: 'Reset Window Active',
+    body: `You have ${minutes} minutes to adjust tomorrow's app limits before reset at ${resetStr}.`,
+    channelId: NOTIFICATION_CHANNELS.REMINDERS,
+    data: { type: 'window_opening', resetTime: resetStr },
+  });
+}
+
+/**
+ * Backward compatibility wrapper for code that called dispatchNotification.
  */
 export async function dispatchNotification({
   title,
   body,
-  type = 'info',
   data,
 }: {
   title: string;
   body: string;
-  type?: 'locked' | 'warning' | 'info';
+  type?: string;
   data?: Record<string, any>;
-}): Promise<InAppNotificationPayload> {
-  const payload: InAppNotificationPayload = {
-    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+}): Promise<void> {
+  await sendNativeNotification({
     title,
     body,
-    type,
-    timestamp: 'NOW',
     data,
-  };
-
-  // Broadcast to in-app banner listeners (no haptic/sound — OS handles those)
-  listeners.forEach((listener) => {
-    try {
-      listener(payload);
-    } catch (err) {
-      console.warn('[InAppNotification Error]:', err);
-    }
   });
+}
 
-  // 3. Schedule local push notification (if supported)
+/**
+ * Cancels all scheduled local notifications.
+ */
+export async function cancelAllScheduledNotifications(): Promise<void> {
   try {
     const notif = getNotifications();
     if (notif) {
-      await notif.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          // No custom sound — system default sound is managed by the OS
-          badge: 1,
-          color: '#09090b',
-          data: { ...data, type },
-        },
-        trigger: null, // deliver immediately
-      });
+      await notif.cancelAllScheduledNotificationsAsync();
     }
   } catch (err) {
-    console.warn('[System Notification Dispatch Note]:', err);
+    console.warn('[Notifications] Failed to cancel notifications:', err);
   }
-
-  return payload;
-}
-
-/**
- * App limit exhausted & locked
- */
-export function notifyAppLocked(
-  appName: string,
-  limitFormatted: string,
-  resetTime: string = '08:00 AM'
-) {
-  return dispatchNotification({
-    title: `${appName} Locked`,
-    body: `Daily allowance (${limitFormatted}) depleted. FocusLock active until ${resetTime}.`,
-    type: 'locked',
-    data: { appName, action: 'locked' },
-  });
-}
-
-/**
- * App approaching daily limit
- */
-export function notifyAppWarning(appName: string, remainingFormatted: string) {
-  return dispatchNotification({
-    title: `${appName} Approaching Limit`,
-    body: `Only ${remainingFormatted} remaining. Wrap up before lockout.`,
-    type: 'warning',
-    data: { appName, action: 'warning' },
-  });
-}
-
-/**
- * Scheduled daily reset completed
- */
-export function notifyDailyReset(resetTime: string = '08:00 AM') {
-  return dispatchNotification({
-    title: 'Daily Reset Complete',
-    body: `All counters refreshed. Enforcement active until tomorrow at ${resetTime}.`,
-    type: 'info',
-    data: { action: 'daily_reset' },
-  });
 }

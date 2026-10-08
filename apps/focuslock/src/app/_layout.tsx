@@ -3,7 +3,6 @@ import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import '../../global.css';
-import { InAppNotificationBanner } from '../components/ui';
 import { initNotifications } from '../lib/notifications';
 import { ThemeProvider, useTheme } from '../lib/ThemeContext';
 
@@ -62,7 +61,6 @@ function AppShell() {
           }}
         />
       </Stack>
-      <InAppNotificationBanner />
     </View>
   );
 }
