@@ -65,10 +65,12 @@ authRouter.post('/register-request', async (req, res) => {
     return res.status(409).json({ error: 'Username is already taken. Please choose another.' });
   }
 
-  // Check if email already registered in auth.users
+  // Check if email already registered in auth.users (confirmed account)
   const { data: usersList } = await supabaseAdmin.auth.admin.listUsers();
-  const emailExists = usersList?.users?.some((u) => u.email?.toLowerCase() === cleanEmail);
-  if (emailExists) {
+  const existingConfirmedUser = usersList?.users?.find(
+    (u) => u.email?.toLowerCase() === cleanEmail && (u.email_confirmed_at || u.confirmed_at)
+  );
+  if (existingConfirmedUser) {
     return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
   }
 
@@ -109,7 +111,7 @@ authRouter.post('/register-request', async (req, res) => {
 
 /**
  * POST /api/auth/register-verify
- * Step 2: Validates the 6-digit OTP and creates the account in Supabase.
+ * Step 2: Validates the 6-digit OTP and creates or confirms the account in Supabase.
  */
 authRouter.post('/register-verify', async (req, res) => {
   const { email, code } = req.body;
@@ -130,23 +132,53 @@ authRouter.post('/register-verify', async (req, res) => {
     return res.status(400).json({ error: 'Registration session expired. Please start over.' });
   }
 
-  // Create user in Supabase with verified email
-  const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-    email: cleanEmail,
-    password,
-    user_metadata: {
-      username,
-      full_name: username,
-    },
-    email_confirm: true, // confirmed because OTP verified!
-  });
+  // Find if user was created as unconfirmed during createOtp, or create new confirmed user
+  let userId = verification.userId;
+  let userEmail = cleanEmail;
 
-  if (createError) {
-    console.error('[/register-verify] Supabase create user error:', createError);
-    return res.status(400).json({ error: createError.message });
+  if (!userId) {
+    const { data: usersList } = await supabaseAdmin.auth.admin.listUsers();
+    const existing = usersList?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+    if (existing) {
+      userId = existing.id;
+    }
   }
 
-  const userId = newUser.user?.id;
+  if (userId) {
+    // User already exists in Supabase (e.g. pending unconfirmed created by createOtp)
+    const { data: updatedUser, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password,
+      email_confirm: true,
+      user_metadata: {
+        username,
+        full_name: username,
+      },
+    });
+
+    if (updateError) {
+      console.error('[/register-verify] Supabase update user error:', updateError);
+      return res.status(400).json({ error: updateError.message });
+    }
+    userEmail = updatedUser.user?.email || cleanEmail;
+  } else {
+    // Create new user in Supabase with verified email
+    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: cleanEmail,
+      password,
+      user_metadata: {
+        username,
+        full_name: username,
+      },
+      email_confirm: true, // confirmed because OTP verified!
+    });
+
+    if (createError) {
+      console.error('[/register-verify] Supabase create user error:', createError);
+      return res.status(400).json({ error: createError.message });
+    }
+    userId = newUser.user?.id;
+    userEmail = newUser.user?.email || cleanEmail;
+  }
 
   // Explicitly upsert profile row — guarantees existence even if DB trigger misfires
   if (userId) {
@@ -170,13 +202,13 @@ authRouter.post('/register-verify', async (req, res) => {
   }
 
   // Clean up OTP record
-  clearOtp(cleanEmail, 'register');
+  await clearOtp(cleanEmail, 'register');
 
   return res.status(201).json({
     success: true,
     message: 'Account created and verified successfully.',
     userId,
-    email: newUser.user?.email,
+    email: userEmail,
     username,
   });
 });
@@ -200,8 +232,23 @@ authRouter.post('/register-resend', async (req, res) => {
   }
 
   // Retrieve existing metadata so password/username are not lost
-  const existingOtp = getOtp(cleanEmail, 'register');
-  const metadata = existingOtp?.metadata;
+  let existingOtp = getOtp(cleanEmail, 'register');
+  let metadata = existingOtp?.metadata;
+
+  if (!metadata) {
+    try {
+      const { data: usersList } = await supabaseAdmin.auth.admin.listUsers();
+      const user = usersList?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+      if (user?.user_metadata) {
+        metadata = {
+          username: user.user_metadata.pending_username || user.user_metadata.username,
+          password: user.user_metadata.pending_password,
+        };
+      }
+    } catch {
+      // non-fatal
+    }
+  }
 
   // Regenerate OTP with existing metadata
   const { code } = await createOtp(cleanEmail, 'register', metadata);

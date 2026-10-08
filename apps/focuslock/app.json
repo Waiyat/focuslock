@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "focuslock",
+    "name": "FocusLock",
     "slug": "focuslock",
     "scheme": "focuslock",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/focuslock-icon.png",
     "userInterfaceStyle": "light",
     "notification": {
-      "icon": "./assets/icon.png",
+      "icon": "./assets/focuslock-icon.png",
       "color": "#09090b",
       "iosDisplayInForeground": true
     },
@@ -16,7 +16,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/focuslock-icon.png",
           "color": "#09090b",
           "sounds": ["./assets/notification_chime.wav"]
         }

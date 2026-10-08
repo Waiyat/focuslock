@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 
-const resendApiKey = process.env.RESEND_API_KEY || '';
+const rawKey = process.env.RESEND_API_KEY || '';
+const resendApiKey = rawKey.startsWith('re_') ? rawKey.split('eyJ')[0].trim() : rawKey.trim();
 const resendFrom =
   process.env.RESEND_FROM_EMAIL || 'FocusLock <noreply@support.waiyatlabs.space>';
 const feedbackFrom =

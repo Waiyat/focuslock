@@ -1,37 +1,38 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+const PRODUCTION_BACKEND_URL = 'https://focuslockapi.vercel.app';
+
 /**
  * Dynamically resolves the backend base URL.
- * Priority:
- * 1. Metro host IP from Constants.expoConfig?.hostUri (auto-updates when WiFi changes)
- * 2. EXPO_PUBLIC_BACKEND_URL from .env
- * 3. 10.0.2.2:4000 on Android Emulator
- * 4. localhost:4000 on iOS Simulator
+ * In standalone/APK builds, ALWAYS points to the production Vercel backend.
+ * In local Expo development (__DEV__), allows Metro packager override.
  */
 export function getBackendBaseUrl(): string {
-  try {
-    const hostUri =
-      Constants.expoConfig?.hostUri ||
-      (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
-    const hostIp = hostUri ? hostUri.split(':')[0] : null;
+  // 1. Explicit env variable is top priority
+  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.replace(/\/+$/, '');
+  }
 
-    if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
-      return `http://${hostIp}:4000`;
+  // 2. Only during local development with active Metro packager, allow host IP
+  if (__DEV__) {
+    try {
+      const hostUri =
+        Constants.expoConfig?.hostUri ||
+        (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
+      const hostIp = hostUri ? hostUri.split(':')[0] : null;
+
+      if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
+        return `http://${hostIp}:4000`;
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
-  if (process.env.EXPO_PUBLIC_BACKEND_URL) {
-    return process.env.EXPO_PUBLIC_BACKEND_URL;
-  }
-
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:4000';
-  }
-
-  return 'http://localhost:4000';
+  // 3. Guaranteed production URL for all APK and release builds
+  return PRODUCTION_BACKEND_URL;
 }
 
 export type ApiResponse<T> = {
