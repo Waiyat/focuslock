@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -38,8 +38,21 @@ export function UsageAccessBanner({
   const [status, setStatus] = useState<UsageAccessStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Tracks the last observed Usage Access grant so a fresh grant (Settings →
+  // return, or a post-reinstall heal) restarts native monitoring exactly once
+  // instead of silently staying dead.
+  const grantedRef = useRef(false);
+
   const refresh = useCallback(async () => {
     const next = await usageEngine.accessStatus();
+    const granted = next.available && next.usageAccessGranted;
+    const justGranted = granted && !grantedRef.current;
+    grantedRef.current = granted;
+    if (justGranted) {
+      // setLimits (the only call that starts MonitorService) is skipped while
+      // the permission is missing — re-push limits now that it is granted.
+      void usageEngine.resyncForMonitoring();
+    }
     setStatus(next);
     onStatusChange?.(next);
   }, [onStatusChange]);

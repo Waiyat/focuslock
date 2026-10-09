@@ -209,7 +209,7 @@ export default function ForgotPasswordScreen() {
                     error={emailError.trim() ? emailError : undefined}
                     leftIcon={
                       <Image
-                        source={require('../../assets/mail.svg')}
+                        source={require('../../../assets/mail.svg')}
                         style={styles.inputIcon}
                         contentFit="contain"
                       />

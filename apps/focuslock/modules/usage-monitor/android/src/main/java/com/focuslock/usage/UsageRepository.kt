@@ -138,9 +138,13 @@ class UsageRepository(
   // Read APIs (callers ensure freshness first via Engine.ensureFresh)
   // -----------------------------------------------------------------------------
 
-  /** Real accumulated foreground usage for the current local calendar day. */
-  fun todayUsage(packageName: String, now: Long): Long =
-    usageOverlapping(packageName, startOfLocalDay(now), now + 1, now)
+  /**
+   * Real accumulated foreground usage for the current local calendar day,
+   * clamped to the allowance start — usage recorded before this allowance was
+   * created never counts against it (fresh-allowance guarantee).
+   */
+  fun todayUsage(packageName: String, now: Long, startsAtMs: Long = 0L): Long =
+    usageOverlapping(packageName, maxOf(startOfLocalDay(now), startsAtMs), now + 1, now)
 
   /** Σ overlap of [packageName] sessions (stored + live) with `[from, to)`. */
   private fun usageOverlapping(packageName: String, from: Long, to: Long, now: Long): Long {

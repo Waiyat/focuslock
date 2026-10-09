@@ -165,7 +165,7 @@ object Engine {
     val lm = lockManager ?: return
     for (config in limits) {
       if (!config.enabled) continue
-      val usage = r.todayUsage(config.packageName, now)
+      val usage = r.todayUsage(config.packageName, now, config.startsAtMs)
       val evaluation = LimitEngine.evaluate(config, usage)
       ULog.d(
         AREA,
@@ -256,7 +256,10 @@ object Engine {
     ensureInitialized(appContext)
     val now = System.currentTimeMillis()
     ensureFresh(now)
-    repo!!.todayUsage(packageName, now)
+    // Clamp to the allowance start so a freshly created limit reports 0 even
+    // when the app was already used earlier today (before the limit existed).
+    val startsAt = limits.firstOrNull { it.packageName == packageName }?.startsAtMs ?: 0L
+    repo!!.todayUsage(packageName, now, startsAt)
   }
 
   fun usageForRange(packageName: String, start: Long, end: Long): Long = synchronized(lock) {

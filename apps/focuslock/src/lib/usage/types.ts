@@ -16,6 +16,13 @@ export interface UsageLimitConfig {
   dailyLimitMs: number;
   warningThresholdMs?: number;
   enabled: boolean;
+  /**
+   * Epoch ms when this allowance was created/activated (app_limits.created_at).
+   * Usage recorded before this instant never counts against the allowance, so
+   * a newly added app always starts at zero. 0/undefined = count the whole
+   * local day (legacy rows without a creation time).
+   */
+  startsAtMs?: number;
 }
 
 /** One foreground session reconstructed from real Android usage events. */

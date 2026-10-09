@@ -32,6 +32,8 @@ interface ConfigurableLimit {
   app_display_name?: string | null;
   daily_limit_seconds: number;
   is_active?: boolean;
+  /** ISO timestamp of the app_limits row (fresh-allowance start point). */
+  created_at?: string | null;
 }
 
 const NATIVE_EVENT_NAMES: NativeUsageEventName[] = [
@@ -41,11 +43,20 @@ const NATIVE_EVENT_NAMES: NativeUsageEventName[] = [
   'onLockTriggered',
 ];
 
+/** Epoch ms of an ISO `created_at` — 0 when absent/unparseable (whole-day count). */
+function allowanceStartMs(createdAt?: string | null): number {
+  if (!createdAt) return 0;
+  const t = Date.parse(createdAt);
+  return Number.isFinite(t) ? t : 0;
+}
+
 class UsageEngine {
   /** False on iOS/web and in Expo Go (native module absent) — never faked. */
   readonly available: boolean;
 
   private configuredSignature = '';
+  /** Last payload pushed to native — reused to restart monitoring after a permission grant. */
+  private lastSyncedConfigs: UsageLimitConfig[] | null = null;
   private nativeSubscriptions: { remove(): void }[] = [];
   private subscribers = new Set<EventCallback>();
 
@@ -91,25 +102,47 @@ class UsageEngine {
   async configure(limits: ConfigurableLimit[]): Promise<void> {
     if (!this.available) return;
     const active = limits.filter((l) => l.is_active !== false && !!l.app_bundle_id);
-    const signature = active
-      .map((l) => `${l.app_bundle_id}:${l.daily_limit_seconds}`)
-      .join('|');
-    if (signature === this.configuredSignature) return;
-
     const configs: UsageLimitConfig[] = active.map((l) => ({
       packageName: l.app_bundle_id,
       appName: l.app_display_name || l.app_bundle_id,
       dailyLimitMs: Math.max(0, Math.round((l.daily_limit_seconds || 0) * 1000)),
       warningThresholdMs: DEFAULT_WARNING_THRESHOLD_MS,
       enabled: true,
+      // Fresh allowance: usage recorded before the row was created never counts.
+      startsAtMs: allowanceStartMs(l.created_at),
     }));
+    // Signature includes startsAtMs so a newly created allowance always
+    // re-syncs even when the limit seconds themselves are unchanged.
+    const signature = configs
+      .map((l) => `${l.packageName}:${l.dailyLimitMs}:${l.startsAtMs ?? 0}`)
+      .join('|');
+    if (signature === this.configuredSignature) return;
 
     try {
       const count = await usageBridge.setLimits(configs);
       this.configuredSignature = signature;
+      this.lastSyncedConfigs = configs;
       this.log('Usage', `Limits synced to native engine (${count} package(s))`);
     } catch (err) {
       console.warn('[FocusLock][Usage] Failed to sync limits to native engine:', err);
+    }
+  }
+
+  /**
+   * Re-pushes the last synced limits to the native engine.
+   *
+   * `setLimits` is the only bridge call that starts MonitorService, and the
+   * bridge skips starting it while Usage Access is missing — so after the
+   * user grants the permission (fresh install / reinstall heal), monitoring
+   * must be nudged even though the limits themselves never changed.
+   */
+  async resyncForMonitoring(): Promise<void> {
+    if (!this.available || !this.lastSyncedConfigs || this.lastSyncedConfigs.length === 0) return;
+    try {
+      const count = await usageBridge.setLimits(this.lastSyncedConfigs);
+      this.log('Usage', `Limits re-synced after permission grant (${count} package(s))`);
+    } catch (err) {
+      console.warn('[FocusLock][Usage] Re-sync after permission grant failed:', err);
     }
   }
 

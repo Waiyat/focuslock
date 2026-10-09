@@ -381,7 +381,7 @@ export default function RegisterScreen() {
                     error={usernameError.trim() ? usernameError : undefined}
                     leftIcon={
                       <Image
-                        source={require('../../assets/user.svg')}
+                        source={require('../../../assets/mail.svg')}
                         style={styles.inputIcon}
                         contentFit="contain"
                       />
@@ -402,7 +402,7 @@ export default function RegisterScreen() {
                     error={emailError.trim() ? emailError : undefined}
                     leftIcon={
                       <Image
-                        source={require('../../assets/mail.svg')}
+                        source={require('../../../assets/mail.svg')}
                         style={styles.inputIcon}
                         contentFit="contain"
                       />
@@ -424,7 +424,7 @@ export default function RegisterScreen() {
                     error={passwordError.trim() ? passwordError : undefined}
                     leftIcon={
                       <Image
-                        source={require('../../assets/lock.svg')}
+                        source={require('../../../assets/lock.svg')}
                         style={styles.inputIcon}
                         contentFit="contain"
                       />
@@ -437,7 +437,7 @@ export default function RegisterScreen() {
                         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                       >
                         <Image
-                          source={showPassword ? require('../../assets/eye-off.svg') : require('../../assets/eye.svg')}
+                          source={showPassword ? require('../../../assets/eye-off.svg') : require('../../../assets/eye.svg')}
                           style={styles.eyeIcon}
                           contentFit="contain"
                         />
@@ -459,7 +459,7 @@ export default function RegisterScreen() {
                     error={confirmPasswordError.trim() ? confirmPasswordError : undefined}
                     leftIcon={
                       <Image
-                        source={require('../../assets/lock.svg')}
+                        source={require('../../../assets/lock.svg')}
                         style={styles.inputIcon}
                         contentFit="contain"
                       />
@@ -472,7 +472,7 @@ export default function RegisterScreen() {
                         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                       >
                         <Image
-                          source={showConfirmPassword ? require('../../assets/eye-off.svg') : require('../../assets/eye.svg')}
+                          source={showConfirmPassword ? require('../../../assets/eye-off.svg') : require('../../../assets/eye.svg')}
                           style={styles.eyeIcon}
                           contentFit="contain"
                         />

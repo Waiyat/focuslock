@@ -58,7 +58,8 @@ data class LimitConfig(
   val appName: String,
   val dailyLimitMs: Long,
   val warningThresholdMs: Long,
-  val enabled: Boolean
+  val enabled: Boolean,
+  val startsAtMs: Long = 0L
 ) {
   fun toJson(): JSONObject = JSONObject().apply {
     put("packageName", packageName)
@@ -66,6 +67,7 @@ data class LimitConfig(
     put("dailyLimitMs", dailyLimitMs)
     put("warningThresholdMs", warningThresholdMs)
     put("enabled", enabled)
+    put("startsAtMs", startsAtMs)
   }
 
   companion object {
@@ -76,7 +78,8 @@ data class LimitConfig(
       appName = o.optString("appName", o.getString("packageName")),
       dailyLimitMs = o.getLong("dailyLimitMs"),
       warningThresholdMs = o.optLong("warningThresholdMs", DEFAULT_WARNING_THRESHOLD_MS),
-      enabled = o.optBoolean("enabled", true)
+      enabled = o.optBoolean("enabled", true),
+      startsAtMs = o.optLong("startsAtMs", 0L)
     )
   }
 }

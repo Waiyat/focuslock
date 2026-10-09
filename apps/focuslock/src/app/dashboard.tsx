@@ -900,13 +900,8 @@ export default function DashboardScreen() {
           mappedLimits = mappedLimits.map((l: any) =>
             staleIds.includes(l.id) ? { ...l, used_seconds: 0 } : l
           );
-          supabase
-            .from('app_limits')
-            .update({ used_seconds: 0, updated_at: new Date().toISOString() })
-            .in('id', staleIds)
-            .then(({ error }: { error: any }) => {
-              if (error) console.warn('[Daily reset catch-up]', error.message);
-            });
+          // Note: app_limits has no used_seconds column (real usage lives in the
+          // native engine + usage_snapshots) — local zero only, no DB write.
         }
       }
 
@@ -976,28 +971,13 @@ export default function DashboardScreen() {
 
   const nextResetRef = useRef<number | null>(null);
 
-  /** Runs the real daily reset: zeroes usage, persists it, notifies the user. */
-  const performDailyReset = useCallback(async () => {
+  /** Runs the daily reset: zeroes local usage and notifies the user. */
+  const performDailyReset = useCallback(() => {
     const resetLabel = formatClock(resetWindow.reset_time);
 
-    // Optimistic local reset — the realtime channel syncs other tabs/devices.
+    // Local zero only — app_limits has no used_seconds column, and the native
+    // engine already rolls its own usage at the local-day boundary.
     setLimits((prev) => prev.map((l) => (l.used_seconds ? { ...l, used_seconds: 0 } : l)));
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) return;
-
-      const { error } = await supabase
-        .from('app_limits')
-        .update({ used_seconds: 0, updated_at: new Date().toISOString() })
-        .eq('user_id', sessionData.session.user.id)
-        .eq('is_active', true)
-        .gt('used_seconds', 0);
-
-      if (error) console.warn('[Daily reset sync]', error.message);
-    } catch (err) {
-      console.warn('[Daily reset sync error]', err);
-    }
 
     notifyDailyReset(resetLabel);
   }, [resetWindow.reset_time]);
