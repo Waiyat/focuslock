@@ -108,7 +108,7 @@ export function UsageAccessBanner({
       </Text>
       <Text style={styles.body}>
         {needsUsageAccess
-          ? 'FocusLock needs access to your app usage so it can measure the limits you configure.'
+          ? 'FocusLock needs access to your app usage so it can measure the limits you configure. If FocusLock is not listed on the next screen, find "Usage access" under Settings → Apps → Special app access and switch it on there.'
           : 'FocusLock needs to appear over restricted apps so it can take you to its lock screen when a limit is reached.'}
       </Text>
       <TouchableOpacity

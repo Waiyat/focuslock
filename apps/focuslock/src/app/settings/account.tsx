@@ -350,7 +350,7 @@ export default function AccountSettingsScreen() {
             <View style={sh.divider} />
             <View style={styles.aboutRow}>
               <Text style={styles.aboutKey}>App version</Text>
-              <Text style={styles.aboutVal}>1.0.0 (Build 1)</Text>
+              <Text style={styles.aboutVal}>1.1.5</Text>
             </View>
           </View>
 

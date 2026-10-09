@@ -1,80 +1,16 @@
 import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
-let nativeErrorPlayer: any = null;
-
-function getNativeErrorPlayer() {
-  if (Platform.OS !== 'web' && !nativeErrorPlayer) {
-    try {
-      const { createAudioPlayer } = require('expo-audio');
-      if (createAudioPlayer) {
-        nativeErrorPlayer = createAudioPlayer(require('../../assets/error-beep.wav'));
-      }
-    } catch {
-      // expo-audio not loaded
-    }
-  }
-  return nativeErrorPlayer;
-}
-
 /**
- * Plays an error sound and triggers haptic vibration for invalid credentials or input errors.
- * Plays error tone on iOS/Android (via expo-audio) and Web (via Web Audio API).
+ * Error feedback — HAPTIC ONLY (sounds removed by product spec).
+ * A short error notification vibration for invalid credentials / input errors.
  */
 export async function playErrorFeedback() {
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
   try {
-    // 1. Native Haptic Feedback (iOS / Android)
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      } catch {
-        // Haptics not available on current device/emulator
-      }
-    }
-
-    // 2. Native Audio playback (iOS / Android)
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      try {
-        const player = getNativeErrorPlayer();
-        if (player) {
-          player.seekTo(0);
-          player.play();
-        }
-      } catch {
-        // Audio playback fallback
-      }
-    }
-
-    // 3. Audio playback (Web Audio API synthesis on web)
-    if (Platform.OS === 'web') {
-      try {
-        const AudioContextClass =
-          (window as any).AudioContext || (window as any).webkitAudioContext;
-        if (AudioContextClass) {
-          const ctx = new AudioContextClass();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-
-          osc.type = 'sawtooth';
-          // Double buzz / descending error tone
-          osc.frequency.setValueAtTime(180, ctx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.15);
-
-          gain.gain.setValueAtTime(0.3, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-
-          osc.start();
-          osc.stop(ctx.currentTime + 0.15);
-        }
-      } catch {
-        // AudioContext restricted before first user interaction
-      }
-    }
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   } catch {
-    // Suppress any context errors gracefully
+    // Haptics not available on current device/emulator
   }
 }
 
@@ -92,6 +28,32 @@ export async function playSelectionFeedback() {
  */
 export async function playLightFeedback() {
   // Intentionally empty — haptics reserved for errors only
+}
+
+/**
+ * Heavy impact — used for tactile keystroke-style feedback (e.g. the
+ * FocusLock typewriter intro on Home). Falls back to a medium impact,
+ * then to a short vibration, on devices without haptic hardware.
+ */
+export async function playHeavyFeedback() {
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
+  try {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    return;
+  } catch {
+    // fall through to softer fallbacks
+  }
+  try {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    return;
+  } catch {
+    // fall through
+  }
+  try {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  } catch {
+    // Haptics not available on current device/emulator
+  }
 }
 
 /**

@@ -1,111 +1,109 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet,
   Switch,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-// expo-haptics removed — error-only haptic policy
 import { SubHeader, useSharedStyles } from './_shared';
+import { ThemeColors } from '../../lib/theme';
 import { supabase } from '../../lib/supabase';
 import { submitFeedback } from '../../lib/api';
+import { playErrorFeedback } from '../../lib/feedback';
 
-const CATEGORIES = [
-  { id: 'bug', label: 'Bug Report', sub: 'Something is broken or not working as expected', color: '#ff3b30' },
-  { id: 'feature', label: 'Feature Request', sub: 'An idea or tool you would love to see', color: '#007aff' },
-  { id: 'ux', label: 'Usability & Design', sub: 'Layout, typography, colors, or ease of use', color: '#af52de' },
-  { id: 'general', label: 'General Feedback', sub: 'Any other comments, compliments, or thoughts', color: '#ff9500' },
-] as const;
+const APP_VERSION = '1.1.5';
 
-const RATING_LABELS = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent!'];
+interface Category {
+  id: string;
+  label: string;
+  sub: string;
+  color: string;
+}
+
+const CATEGORIES: Category[] = [
+  { id: 'bug', label: 'Bug Report', sub: 'Something is broken or not working as expected', color: '#FF3B30' },
+  { id: 'feature', label: 'Feature Request', sub: 'A capability or idea you would like to see', color: '#007AFF' },
+  { id: 'design', label: 'Design & Usability', sub: 'Layout, readability, or ease of use', color: '#AF52DE' },
+  { id: 'general', label: 'General', sub: 'Anything else you would like to share', color: '#FF9500' },
+];
+
+const RATING_LABELS = ['Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
 
 export default function FeedbackScreen() {
   const router = useRouter();
   const { sh, isDark, colors } = useSharedStyles();
-  const styles = createFeedbackStyles(colors, isDark);
-  const [selectedCat, setSelectedCat] = useState<string>('general');
+  const styles = useMemo(() => createFeedbackStyles(colors, isDark), [colors, isDark]);
+
+  const [category, setCategory] = useState<string>('general');
   const [rating, setRating] = useState<number>(5);
   const [message, setMessage] = useState<string>('');
   const [replyEmail, setReplyEmail] = useState<string>('');
   const [includeDiagnostics, setIncludeDiagnostics] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [submitted, setSubmitted] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<boolean>(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data?.user?.email) {
-        setReplyEmail(data.user.email);
-      }
+      if (data?.user?.email) setReplyEmail(data.user.email);
     });
   }, []);
 
-  const handleSelectRating = (stars: number) => {
-    // no haptic — error-only policy
-    setRating(stars);
-  };
-
-  const handleSelectCategory = (catId: string) => {
-    // no haptic — error-only policy
-    setSelectedCat(catId);
-  };
-
   const handleSubmit = async () => {
     if (message.trim().length < 8) {
-      // no haptic — error-only policy only fires for auth errors
-      Alert.alert('More Details Needed', 'Please provide at least 8 characters describing your feedback.');
+      playErrorFeedback();
+      setError('Please add a few more details (at least 8 characters).');
       return;
     }
-
+    setError(null);
     setSubmitting(true);
-    // no haptic on submit — error-only policy
-
-    const { error } = await submitFeedback({
-      category: selectedCat,
+    const { error: submitError } = await submitFeedback({
+      category,
       rating,
       message: message.trim(),
       replyEmail: replyEmail.trim() || undefined,
       platform: Platform.OS,
       includeDiagnostics,
     });
-
     setSubmitting(false);
-
-    if (error) {
-      Alert.alert('Error', error);
+    if (submitError) {
+      playErrorFeedback();
+      setError(submitError);
       return;
     }
-
-    setSubmitted(true);
-    // no haptic on success — error-only policy
+    setDone(true);
   };
 
-  if (submitted) {
+  const canSubmit = message.trim().length >= 8 && !submitting;
+
+  if (done) {
     return (
       <SafeAreaView style={sh.safe} edges={['top']}>
-        <SubHeader title="Feedback Received" onBack={() => router.back()} />
-        <View style={styles.successContainer}>
-          <View style={styles.successIconBadge}>
-            <Text style={styles.successCheck}>✓</Text>
+        <SubHeader title="Send Feedback" onBack={() => router.back()} />
+        <View style={styles.successWrap}>
+          <View style={styles.successIcon}>
+            <View style={styles.checkShort} />
+            <View style={styles.checkLong} />
           </View>
-          <Text style={styles.successTitle}>Thank You!</Text>
+          <Text style={styles.successTitle}>Thank you</Text>
           <Text style={styles.successBody}>
-            Your feedback has been sent directly to the FocusLock engineering and design team. We review every note to build a better digital wellbeing companion.
+            Your feedback has been received. It goes directly to the FocusLock team and helps shape
+            the next update.
           </Text>
           <TouchableOpacity
-            style={[sh.primaryBtn, { width: '100%', marginTop: 20 }]}
+            activeOpacity={0.85}
             onPress={() => router.back()}
-            activeOpacity={0.8}
+            style={styles.primaryBtn}
           >
-            <Text style={sh.primaryBtnText}>Return to Settings</Text>
+            <Text style={styles.primaryBtnText}>Back to Settings</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -121,276 +119,449 @@ export default function FeedbackScreen() {
       >
         <ScrollView
           style={sh.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={sh.content}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {/* Hero Banner Card */}
-          <View style={styles.heroCard}>
-            <Text style={styles.heroBadge}>COMMUNITY DRIVEN</Text>
-            <Text style={styles.heroTitle}>Help Us Improve FocusLock</Text>
-            <Text style={styles.heroSub}>
-              Have an idea, found a glitch, or want to suggest layout improvements? We read every submission.
-            </Text>
-          </View>
-
-          {/* Feedback Category */}
-          <Text style={sh.sectionLabel}>FEEDBACK CATEGORY</Text>
-          <View style={sh.card}>
-            {CATEGORIES.map((cat, idx) => {
-              const isSelected = selectedCat === cat.id;
-              const isFirst = idx === 0;
-              const isLast = idx === CATEGORIES.length - 1;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    sh.row,
-                    isFirst && sh.rowFirst,
-                    isLast && sh.rowLast,
-                    !isLast && sh.rowDivider,
-                  ]}
-                  onPress={() => handleSelectCategory(cat.id)}
-                  activeOpacity={0.65}
-                >
-                  <View style={[styles.catColorIndicator, { backgroundColor: cat.color }]} />
-                  <View style={sh.rowBody}>
-                    <Text style={sh.rowLabel}>{cat.label}</Text>
-                    <Text style={sh.rowSub}>{cat.sub}</Text>
-                  </View>
-                  {isSelected && <Text style={styles.checkmark}>✓</Text>}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Experience Rating */}
-          <Text style={sh.sectionLabel}>OVERALL EXPERIENCE</Text>
-          <View style={[sh.card, styles.ratingCard]}>
-            <View style={styles.starRow}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  onPress={() => handleSelectRating(star)}
-                  style={styles.starTouchable}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.starIcon, rating >= star && styles.starActive]}>
-                    ★
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          <View style={styles.wrap}>
+            {/* Intro */}
+            <View style={styles.introCard}>
+              <Text style={styles.introTitle}>Share your feedback</Text>
+              <Text style={styles.introBody}>
+                Tell us what is working and what is not. Every report is reviewed by the FocusLock
+                team and directly shapes the next update.
+              </Text>
             </View>
-            <Text style={styles.ratingLabel}>{RATING_LABELS[rating]}</Text>
-          </View>
 
-          {/* Detailed Message */}
-          <Text style={sh.sectionLabel}>YOUR THOUGHTS & DETAILS</Text>
-          <View style={[sh.card, { padding: 14 }]}>
-            <TextInput
-              style={styles.textarea}
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Tell us what happened, what you expected, or how FocusLock can be better..."
-              placeholderTextColor="#8e8e93"
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-              selectionColor="#007aff"
-              maxLength={1000}
-            />
-            <View style={styles.charCountRow}>
-              <Text style={styles.charCountText}>{message.length} / 1000 characters</Text>
+            {/* Category */}
+            <Text style={sh.sectionLabel}>Category</Text>
+            <View style={sh.card}>
+              {CATEGORIES.map((c, i) => {
+                const active = category === c.id;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    activeOpacity={0.7}
+                    onPress={() => setCategory(c.id)}
+                    style={[styles.catRow, i < CATEGORIES.length - 1 && styles.rowDivider]}
+                  >
+                    <View style={[styles.catDot, { backgroundColor: c.color }]} />
+                    <View style={styles.catBody}>
+                      <Text style={styles.catLabel}>{c.label}</Text>
+                      <Text style={styles.catSub}>{c.sub}</Text>
+                    </View>
+                    <View style={[styles.radio, active && styles.radioActive]}>
+                      {active ? <View style={styles.radioDot} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          </View>
 
-          {/* Reply Email */}
-          <Text style={sh.sectionLabel}>REPLY EMAIL</Text>
-          <View style={[sh.card, { paddingVertical: 4, paddingHorizontal: 16 }]}>
-            <TextInput
-              style={styles.emailInput}
-              value={replyEmail}
-              onChangeText={setReplyEmail}
-              placeholder="Your email (optional for reply)"
-              placeholderTextColor="#8e8e93"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              selectionColor="#007aff"
-            />
-          </View>
-
-          {/* Diagnostics Switch */}
-          <Text style={sh.sectionLabel}>DIAGNOSTIC TELEMETRY</Text>
-          <View style={sh.card}>
-            <View style={[sh.row, sh.rowFirst, sh.rowLast]}>
-              <View style={sh.rowBody}>
-                <Text style={sh.rowLabel}>Include Device Info</Text>
-                <Text style={sh.rowSub}>
-                  {Platform.OS === 'ios' ? 'iOS' : 'Android'} · FocusLock v1.0.0 (Build 1)
-                </Text>
+            {/* Rating */}
+            <Text style={sh.sectionLabel}>Overall experience</Text>
+            <View style={sh.card}>
+              <View style={styles.ratingWrap}>
+                {RATING_LABELS.map((label, i) => {
+                  const value = i + 1;
+                  const active = rating === value;
+                  return (
+                    <TouchableOpacity
+                      key={label}
+                      activeOpacity={0.7}
+                      onPress={() => setRating(value)}
+                      style={[styles.ratingSeg, active && styles.ratingSegActive]}
+                    >
+                      <Text style={[styles.ratingSegText, active && styles.ratingSegTextActive]}>
+                        {value}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-              <Switch
-                value={includeDiagnostics}
-                onValueChange={setIncludeDiagnostics}
-                trackColor={{ false: '#e5e5ea', true: '#34c759' }}
-                thumbColor="#ffffff"
-                ios_backgroundColor="#e5e5ea"
+              <View style={styles.ratingLabelWrap}>
+                <Text style={styles.ratingLabel}>{RATING_LABELS[rating - 1]}</Text>
+              </View>
+            </View>
+
+            {/* Message */}
+            <Text style={sh.sectionLabel}>Details</Text>
+            <View style={styles.inputCard}>
+              <TextInput
+                style={styles.textArea}
+                placeholder="Tell us what happened, what you expected, and any steps to reproduce the issue."
+                placeholderTextColor={colors.textMuted}
+                selectionColor={colors.accent}
+                keyboardAppearance={isDark ? 'dark' : 'light'}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+                value={message}
+                onChangeText={setMessage}
+              />
+              <View style={styles.counterRow}>
+                <Text style={styles.counterText}>{message.trim().length} characters</Text>
+              </View>
+            </View>
+
+            {/* Reply email */}
+            <Text style={sh.sectionLabel}>Contact</Text>
+            <View style={styles.inputCard}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email for a reply (optional)"
+                placeholderTextColor={colors.textMuted}
+                selectionColor={colors.accent}
+                keyboardAppearance={isDark ? 'dark' : 'light'}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                value={replyEmail}
+                onChangeText={setReplyEmail}
               />
             </View>
-          </View>
 
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={[sh.primaryBtn, submitting && { opacity: 0.7 }]}
-            onPress={handleSubmit}
-            disabled={submitting}
-            activeOpacity={0.8}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text style={sh.primaryBtnText}>Submit Feedback</Text>
-            )}
-          </TouchableOpacity>
+            {/* Diagnostics toggle */}
+            <Text style={sh.sectionLabel}>Privacy</Text>
+            <View style={sh.card}>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleBody}>
+                  <Text style={styles.toggleLabel}>Include device diagnostics</Text>
+                  <Text style={styles.toggleSub}>
+                    Shares your app version and platform to help us reproduce the issue. No personal
+                    data or usage statistics are ever sent.
+                  </Text>
+                </View>
+                <Switch
+                  value={includeDiagnostics}
+                  onValueChange={setIncludeDiagnostics}
+                  trackColor={{
+                    false: isDark ? 'rgba(255,255,255,0.16)' : '#D1D5DB',
+                    true: colors.success,
+                  }}
+                  thumbColor="#ffffff"
+                  ios_backgroundColor={isDark ? 'rgba(255,255,255,0.16)' : '#D1D5DB'}
+                />
+              </View>
+            </View>
+
+            {error ? (
+              <View style={styles.errorWrap}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            {/* Submit */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={!canSubmit}
+              onPress={handleSubmit}
+              style={[styles.primaryBtn, styles.submitBtn, !canSubmit && styles.primaryBtnDisabled]}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.onAccent} />
+              ) : (
+                <Text style={[styles.primaryBtnText, !canSubmit && styles.primaryBtnTextDisabled]}>
+                  Send Feedback
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.footer}>{`FocusLock v${APP_VERSION}`}</Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-function createFeedbackStyles(colors: any, isDark: boolean) {
+function createFeedbackStyles(C: ThemeColors, isDark: boolean) {
   return StyleSheet.create({
-  scrollContent: {
-    paddingTop: 16,
-    paddingBottom: 48,
-  },
-  heroCard: {
-    backgroundColor: isDark ? colors.bgCardSolid : '#ffffff',
-    borderRadius: 14,
-    padding: 18,
-    marginHorizontal: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  heroBadge: {
-    color: '#007aff',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  heroTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    marginBottom: 6,
-  },
-  heroSub: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  catColorIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 12,
-  },
-  checkmark: {
-    color: '#007aff',
-    fontSize: 18,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  ratingCard: {
-    paddingVertical: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  starRow: {
-    flexDirection: 'row',
-    gap: 14,
-    marginBottom: 8,
-  },
-  starTouchable: {
-    padding: 4,
-  },
-  starIcon: {
-    fontSize: 32,
-    color: '#d1d1d6',
-  },
-  starActive: {
-    color: '#ff9500',
-  },
-  ratingLabel: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: -0.2,
-  },
-  textarea: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    lineHeight: 22,
-    minHeight: 120,
-    paddingTop: 0,
-    paddingBottom: 4,
-  },
-  charCountRow: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: 8,
-    marginTop: 8,
-    alignItems: 'flex-end',
-  },
-  charCountText: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  emailInput: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    paddingVertical: 12,
-  },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-  },
-  successIconBadge: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#34c759',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    shadowColor: '#34c759',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-  },
-  successCheck: {
-    color: '#ffffff',
-    fontSize: 38,
-    fontWeight: '700',
-  },
-  successTitle: {
-    color: colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    marginBottom: 10,
-  },
-  successBody: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
+    wrap: {
+      width: '100%',
+      maxWidth: 680,
+      alignSelf: 'center',
+    },
+
+    // ─── Intro (matches terms/privacy) ───────────────────────────────────────
+    introCard: {
+      backgroundColor: isDark ? C.bgCardSolid : '#ffffff',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: C.border,
+      padding: 18,
+      marginHorizontal: 16,
+      marginBottom: 24,
+    },
+    introTitle: {
+      color: C.textPrimary,
+      fontSize: 20,
+      fontWeight: '700',
+      letterSpacing: -0.4,
+      marginBottom: 6,
+    },
+    introBody: {
+      color: C.textSecondary,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+
+    rowDivider: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: C.border,
+    },
+
+    // ─── Category rows ───────────────────────────────────────────────────────
+    catRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    catDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      marginRight: 14,
+    },
+    catBody: {
+      flex: 1,
+      marginRight: 12,
+    },
+    catLabel: {
+      color: C.textPrimary,
+      fontSize: 16,
+      fontWeight: '500',
+      letterSpacing: -0.3,
+    },
+    catSub: {
+      color: C.textSecondary,
+      fontSize: 13,
+      marginTop: 2,
+      lineHeight: 18,
+    },
+    radio: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 1.5,
+      borderColor: C.borderStrong,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    radioActive: {
+      borderColor: C.accent,
+      backgroundColor: C.accent,
+    },
+    radioDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: C.onAccent,
+    },
+
+    // ─── Rating ──────────────────────────────────────────────────────────────
+    ratingWrap: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+    },
+    ratingSeg: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: C.bgInput,
+      borderWidth: 1,
+      borderColor: C.border,
+    },
+    ratingSegActive: {
+      backgroundColor: C.accent,
+      borderColor: C.accent,
+    },
+    ratingSegText: {
+      color: C.textSecondary,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    ratingSegTextActive: {
+      color: C.onAccent,
+    },
+    ratingLabelWrap: {
+      alignItems: 'center',
+      paddingTop: 12,
+      paddingBottom: 16,
+    },
+    ratingLabel: {
+      color: C.textPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+
+    // ─── Inputs ──────────────────────────────────────────────────────────────
+    inputCard: {
+      backgroundColor: isDark ? C.bgCardSolid : '#ffffff',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: C.border,
+      marginHorizontal: 16,
+      marginBottom: 24,
+      overflow: 'hidden',
+    },
+    textArea: {
+      minHeight: 120,
+      padding: 14,
+      color: C.textPrimary,
+      fontSize: 15,
+      lineHeight: 22,
+    },
+    counterRow: {
+      alignItems: 'flex-end',
+      paddingHorizontal: 14,
+      paddingBottom: 10,
+    },
+    counterText: {
+      color: C.textMuted,
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.2,
+    },
+    input: {
+      paddingVertical: 13,
+      paddingHorizontal: 14,
+      color: C.textPrimary,
+      fontSize: 15,
+    },
+
+    // ─── Diagnostics toggle ──────────────────────────────────────────────────
+    toggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    toggleBody: {
+      flex: 1,
+      marginRight: 12,
+    },
+    toggleLabel: {
+      color: C.textPrimary,
+      fontSize: 16,
+      fontWeight: '500',
+      letterSpacing: -0.3,
+    },
+    toggleSub: {
+      color: C.textSecondary,
+      fontSize: 13,
+      marginTop: 2,
+      lineHeight: 18,
+    },
+
+    // ─── Error ───────────────────────────────────────────────────────────────
+    errorWrap: {
+      backgroundColor: C.dangerDim,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(248,113,113,0.35)' : 'rgba(220,38,38,0.35)',
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      marginHorizontal: 16,
+      marginBottom: 16,
+    },
+    errorText: {
+      color: isDark ? '#FCA5A5' : '#B91C1C',
+      fontSize: 13,
+      fontWeight: '600',
+      lineHeight: 18,
+    },
+
+    // ─── Buttons ─────────────────────────────────────────────────────────────
+    primaryBtn: {
+      backgroundColor: C.accent,
+      borderRadius: 14,
+      paddingVertical: 15,
+      paddingHorizontal: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 52,
+    },
+    submitBtn: {
+      marginHorizontal: 16,
+      marginBottom: 16,
+    },
+    primaryBtnDisabled: {
+      opacity: 0.45,
+    },
+    primaryBtnText: {
+      color: C.onAccent,
+      fontSize: 16,
+      fontWeight: '700',
+      letterSpacing: -0.2,
+    },
+    primaryBtnTextDisabled: {},
+
+    footer: {
+      color: C.textMuted,
+      fontSize: 12,
+      textAlign: 'center',
+      lineHeight: 18,
+      marginHorizontal: 32,
+      marginTop: 4,
+    },
+
+    // ─── Success screen ──────────────────────────────────────────────────────
+    successWrap: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+      paddingBottom: 48,
+    },
+    successIcon: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      backgroundColor: C.successDim,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 22,
+    },
+    checkShort: {
+      position: 'absolute',
+      width: 3,
+      height: 16,
+      borderRadius: 2,
+      backgroundColor: C.success,
+      left: 27,
+      top: 33,
+      transform: [{ rotate: '45deg' }],
+    },
+    checkLong: {
+      position: 'absolute',
+      width: 3,
+      height: 30,
+      borderRadius: 2,
+      backgroundColor: C.success,
+      left: 39,
+      top: 22,
+      transform: [{ rotate: '-45deg' }],
+    },
+    successTitle: {
+      color: C.textPrimary,
+      fontSize: 24,
+      fontWeight: '800',
+      letterSpacing: -0.5,
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    successBody: {
+      color: C.textSecondary,
+      fontSize: 15,
+      lineHeight: 22,
+      textAlign: 'center',
+      marginBottom: 28,
+    },
   });
 }

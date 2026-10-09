@@ -3,10 +3,15 @@
     "name": "FocusLock",
     "slug": "focuslock",
     "scheme": "focuslock",
-    "version": "1.0.0",
+    "version": "1.1.5",
     "orientation": "portrait",
     "icon": "./assets/focuslock-icon.png",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "notification": {
       "icon": "./assets/notification-icon.png",
       "color": "#FFFFFF",
@@ -18,15 +23,21 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#FFFFFF",
-          "sounds": ["./assets/notification_chime.wav"]
+          "sounds": [
+            "./assets/notification_chime.wav"
+          ]
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.focuslock.app",
       "infoPlist": {
-        "UIBackgroundModes": ["fetch", "remote-notification"],
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ],
         "LSApplicationQueriesSchemes": [
           "instagram",
           "snssdk1233",
@@ -61,7 +72,12 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["RECEIVE_BOOT_COMPLETED", "VIBRATE", "QUERY_ALL_PACKAGES"]
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "QUERY_ALL_PACKAGES",
+        "PACKAGE_USAGE_STATS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

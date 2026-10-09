@@ -12,7 +12,7 @@ devicesRouter.use(requireAuth);
  * wins: every other registered device is retired (is_active = false) and
  * this install becomes the active holder.
  *
- * Body: { deviceUuid, deviceName, platform: 'ios' | 'android' }
+ * Body: { deviceUuid, deviceName, platform: 'ios' | 'android' | 'web' }
  */
 devicesRouter.post('/session', async (req, res) => {
   const user = (req as any).user;
@@ -21,14 +21,15 @@ devicesRouter.post('/session', async (req, res) => {
   if (!deviceUuid || typeof deviceUuid !== 'string' || deviceUuid.trim().length < 8) {
     return res.status(400).json({ error: 'deviceUuid (min 8 chars) is required.' });
   }
-  if (!platform || !['ios', 'android'].includes(platform)) {
-    return res.status(400).json({ error: "platform must be 'ios' or 'android'." });
+  if (!platform || !['ios', 'android', 'web'].includes(platform)) {
+    return res.status(400).json({ error: "platform must be 'ios', 'android' or 'web'." });
   }
 
   const uuid = deviceUuid.trim();
   const name = typeof deviceName === 'string' && deviceName.trim() !== ''
     ? deviceName.trim().slice(0, 120)
     : 'Unknown device';
+  const nowIso = new Date().toISOString();
 
   // Preferred path: atomic RPC (migration focuslock_migration_single_device_session).
   const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('claim_device_session', {
@@ -42,41 +43,88 @@ devicesRouter.post('/session', async (req, res) => {
     return res.json({ device: rpcData, active: true });
   }
 
-  // Fallback (pre-migration): two-step claim — retire others, upsert self.
+  // Fallback (pre-migration or RPC rejection): two-step claim — retire
+  // others (INCLUDING legacy rows whose device_uuid IS NULL — plain .neq
+  // never matches NULL in SQL), resolve the row by uuid OR platform, then
+  // upsert. `devices` also has UNIQUE (user_id, platform) from migration
+  // 003, so a platform-only legacy row must be updated, never duplicated.
   if (rpcError) {
     console.warn('[/devices/session] RPC unavailable, using fallback claim:', rpcError.message);
   }
-  const nowIso = new Date().toISOString();
 
+  // 1) Retire every other install: different uuid OR missing uuid.
   const { error: retireError } = await supabaseAdmin
     .from('devices')
     .update({ is_active: false, updated_at: nowIso })
     .eq('user_id', user.id)
-    .neq('device_uuid', uuid);
+    .or(`device_uuid.neq.${uuid},device_uuid.is.null`);
 
   if (retireError) {
     console.error('[/devices/session] retire failed:', retireError);
     return res.status(500).json({ error: 'Failed to claim device session.' });
   }
 
-  const { data: existing } = await supabaseAdmin
+  // 2) Find the row to own: exact uuid match first, then a legacy row for
+  //    this platform with no install identity, which we adopt by writing
+  //    our uuid onto it (UNIQUE (user_id, platform) forbids a second row).
+  const { data: byUuid, error: byUuidError } = await supabaseAdmin
     .from('devices')
     .select('id')
     .eq('user_id', user.id)
     .eq('device_uuid', uuid)
     .maybeSingle();
 
-  const { data: device, error: upsertError } = existing
+  if (byUuidError) {
+    console.error('[/devices/session] lookup by uuid failed:', byUuidError);
+    return res.status(500).json({ error: 'Failed to claim device session.' });
+  }
+
+  const { data: legacy, error: legacyError } = await supabaseAdmin
+    .from('devices')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('platform', platform)
+    .is('device_uuid', null)
+    .limit(1)
+    .maybeSingle();
+
+  if (legacyError) {
+    console.error('[/devices/session] legacy lookup failed:', legacyError);
+    return res.status(500).json({ error: 'Failed to claim device session.' });
+  }
+
+  const targetId: string | null = byUuid?.id ?? legacy?.id ?? null;
+
+  let resolvedId = targetId;
+  if (!resolvedId) {
+    // UNIQUE (user_id, platform): adopt any existing row for this platform
+    // (e.g., another install on the same platform) instead of failing.
+    const { data: platformRow, error: platformRowError } = await supabaseAdmin
+      .from('devices')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('platform', platform)
+      .limit(1)
+      .maybeSingle();
+    if (platformRowError) {
+      console.error('[/devices/session] platform lookup failed:', platformRowError);
+      return res.status(500).json({ error: 'Failed to claim device session.' });
+    }
+    resolvedId = platformRow?.id ?? null;
+  }
+
+  const { data: device, error: upsertError } = resolvedId
     ? await supabaseAdmin
         .from('devices')
         .update({
+          device_uuid: uuid,
           device_name: name,
           platform,
           is_active: true,
           last_seen_at: nowIso,
           updated_at: nowIso,
         })
-        .eq('id', existing.id)
+        .eq('id', resolvedId)
         .select()
         .single()
     : await supabaseAdmin
@@ -103,6 +151,14 @@ devicesRouter.post('/session', async (req, res) => {
 /**
  * GET /api/devices/session/status
  * Tells the caller whether THIS install is still the active session holder.
+ *
+ * Precise tri-state so the client never signs itself out by accident:
+ *   - "active"       → this install holds the session.
+ *   - "superseded"   → this install HAD a row and was retired by a newer
+ *                      login on another device → client must sign out.
+ *   - "unregistered" → this install has NO row (its claim never landed).
+ *                      NOT a supersession — the client should re-claim.
+ *
  * Requires headers: Authorization (Bearer) + x-device-uuid.
  */
 devicesRouter.get('/session/status', async (req, res) => {
@@ -113,20 +169,66 @@ devicesRouter.get('/session/status', async (req, res) => {
     return res.status(400).json({ error: 'x-device-uuid header is required.' });
   }
 
-  const { data: device, error } = await supabaseAdmin
+  const uuid = deviceUuid.trim();
+
+  const { data: exactRow, error: exactError } = await supabaseAdmin
     .from('devices')
-    .select('id, device_name, last_seen_at')
+    .select('id, device_name, is_active, last_seen_at')
     .eq('user_id', user.id)
-    .eq('device_uuid', deviceUuid.trim())
-    .eq('is_active', true)
+    .eq('device_uuid', uuid)
     .maybeSingle();
 
-  if (error) {
-    console.error('[/devices/session/status] Supabase error:', error);
+  if (exactError) {
+    console.error('[/devices/session/status] exact lookup failed:', exactError);
     return res.status(500).json({ error: 'Failed to check device session.' });
   }
 
-  res.json({ active: !!device });
+  if (exactRow?.is_active) {
+    return res.json({ status: 'active', active: true, deviceName: exactRow.device_name ?? null });
+  }
+
+  if (exactRow && !exactRow.is_active) {
+    // We had a row and were retired → name whoever replaced us (for copy).
+    const { data: holder } = await supabaseAdmin
+      .from('devices')
+      .select('device_name')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .not('device_uuid', 'is', null)
+      .neq('device_uuid', uuid)
+      .maybeSingle();
+    return res.json({
+      status: 'superseded',
+      active: false,
+      deviceName: holder?.device_name ?? null,
+    });
+  }
+
+  // No row for this install — its claim never landed. A legacy NULL-uuid
+  // row carries no install identity and does NOT count as registration.
+  // Report whether someone else currently holds the session so the client
+  // can decide between "re-claim" (I just logged in; latest wins) and
+  // "sign out" (stale install, someone else is active).
+  const { data: holder, error: holderError } = await supabaseAdmin
+    .from('devices')
+    .select('device_name')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .not('device_uuid', 'is', null)
+    .neq('device_uuid', uuid)
+    .maybeSingle();
+
+  if (holderError) {
+    console.error('[/devices/session/status] holder lookup failed:', holderError);
+    return res.status(500).json({ error: 'Failed to check device session.' });
+  }
+
+  return res.json({
+    status: 'unregistered',
+    active: false,
+    deviceName: holder?.device_name ?? null,
+    anotherDeviceActive: !!holder,
+  });
 });
 
 /**

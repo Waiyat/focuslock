@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 // expo-haptics removed — error-only haptic policy
 import { playErrorFeedback } from '../../lib/feedback';
+import { useTheme } from '../../lib/ThemeContext';
 
 interface OtpModalProps {
   visible: boolean;
@@ -45,6 +46,9 @@ export function OtpModal({
   onClose,
   initialCooldown = 120,
 }: OtpModalProps) {
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDark), [colors, isDark]);
+
   const [digits, setDigits] = useState<string[]>(Array(NUM_DIGITS).fill(''));
   const [cooldown, setCooldown] = useState(initialCooldown);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -318,8 +322,8 @@ export function OtpModal({
                     autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
                     selectTextOnFocus
                     caretHidden={Platform.OS === 'ios'}
-                    selectionColor="#ffffff"
-                    placeholderTextColor="#52525b"
+                    selectionColor={colors.accent}
+                    placeholderTextColor={colors.textMuted}
                     placeholder="·"
                   />
                 );
@@ -389,213 +393,215 @@ export function OtpModal({
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  backdropTap: {
-    ...StyleSheet.absoluteFill,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: 'rgba(18, 18, 24, 0.96)',
-    borderRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 24,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000000',
-        shadowOffset: { width: 0, height: 20 },
-        shadowOpacity: 0.5,
-        shadowRadius: 40,
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-  iconBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  iconEmoji: {
-    fontSize: 26,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#ffffff',
-    letterSpacing: -0.4,
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#a1a1aa',
-    textAlign: 'center',
-  },
-  emailBadgeWrap: {
-    marginTop: 6,
-    marginBottom: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 100,
-    maxWidth: '100%',
-  },
-  emailBadge: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center',
-  },
-  autofillHint: {
-    fontSize: 11,
-    color: '#71717a',
-    textAlign: 'center',
-    lineHeight: 16,
-    paddingHorizontal: 10,
-  },
-  hiddenInput: {
-    position: 'absolute',
-    opacity: 0,
-    height: 0,
-    width: 0,
-  },
-  // ── Split boxes ────────────────────────────────────────────────────────
-  boxesRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
-  digitBox: {
-    width: 46,
-    height: 58,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    backgroundColor: '#18181b',
-    fontSize: 26,
-    fontWeight: '800',
-    textAlign: 'center',
-    color: '#ffffff',
-  },
-  digitBoxFocused: {
-    borderColor: '#76F756',
-    backgroundColor: '#27272a',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#76F756',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 8,
-      },
-    }),
-  },
-  digitBoxFilled: {
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    backgroundColor: '#27272a',
-  },
-  // ── Error ──────────────────────────────────────────────────────────────
-  errorWrap: {
-    backgroundColor: 'rgba(239, 68, 68, 0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-  },
-  errorText: {
-    color: '#f87171',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  // ── Resend ─────────────────────────────────────────────────────────────
-  resendRow: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  countdownText: {
-    color: '#a1a1aa',
-    fontSize: 13,
-  },
-  timerBold: {
-    fontWeight: '800',
-    color: '#ffffff',
-    fontVariant: ['tabular-nums'],
-  },
-  resendLink: {
-    color: '#76F756',
-    fontSize: 13,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
-  },
-  // ── Buttons ────────────────────────────────────────────────────────────
-  actions: {
-    gap: 10,
-  },
-  primaryBtn: {
-    backgroundColor: '#27272a',
-    borderRadius: 16,
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnReady: {
-    backgroundColor: '#76F756',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#76F756',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.45,
-        shadowRadius: 16,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  primaryBtnDisabled: {
-    opacity: 0.6,
-  },
-  primaryBtnText: {
-    color: '#71717a',
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  primaryBtnTextReady: {
-    color: '#09090b',
-    fontWeight: '800',
-  },
-  cancelBtn: {
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  cancelBtnText: {
-    color: '#a1a1aa',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+
+function createStyles(C: any, isDark: boolean) {
+  return StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+    },
+    backdropTap: {
+      ...StyleSheet.absoluteFill,
+    },
+    modalCard: {
+      width: '100%',
+      maxWidth: 400,
+      backgroundColor: C.bgCardSolid,
+      borderRadius: 28,
+      paddingHorizontal: 24,
+      paddingTop: 28,
+      paddingBottom: 24,
+      borderWidth: 1.5,
+      borderColor: C.border,
+      ...Platform.select({
+        ios: {
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: 20 },
+          shadowOpacity: isDark ? 0.5 : 0.2,
+          shadowRadius: 40,
+        },
+        android: { elevation: 12 },
+      }),
+    },
+    header: {
+      alignItems: 'center',
+      marginBottom: 22,
+    },
+    iconBadge: {
+      width: 56,
+      height: 56,
+      borderRadius: 18,
+      backgroundColor: C.accentDim,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 14,
+      borderWidth: 1.5,
+      borderColor: C.border,
+    },
+    iconEmoji: {
+      fontSize: 26,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: C.textPrimary,
+      letterSpacing: -0.4,
+      marginBottom: 6,
+    },
+    subtitle: {
+      fontSize: 13,
+      color: C.textSecondary,
+      textAlign: 'center',
+    },
+    emailBadgeWrap: {
+      marginTop: 6,
+      marginBottom: 10,
+      backgroundColor: C.accentDim,
+      borderWidth: 1,
+      borderColor: C.border,
+      paddingHorizontal: 14,
+      paddingVertical: 5,
+      borderRadius: 100,
+      maxWidth: '100%',
+    },
+    emailBadge: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: C.textPrimary,
+      textAlign: 'center',
+    },
+    autofillHint: {
+      fontSize: 11,
+      color: C.textMuted,
+      textAlign: 'center',
+      lineHeight: 16,
+      paddingHorizontal: 10,
+    },
+    hiddenInput: {
+      position: 'absolute',
+      opacity: 0,
+      height: 0,
+      width: 0,
+    },
+    // ── Split boxes ────────────────────────────────────────────────────────
+    boxesRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 8,
+      marginBottom: 14,
+    },
+    digitBox: {
+      width: 46,
+      height: 58,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: C.border,
+      backgroundColor: C.bgInput,
+      fontSize: 26,
+      fontWeight: '800',
+      textAlign: 'center',
+      color: C.textPrimary,
+    },
+    digitBoxFocused: {
+      borderColor: C.accent,
+      backgroundColor: isDark ? C.bgCardHover : C.bgCardSolid,
+      ...Platform.select({
+        ios: {
+          shadowColor: C.accent,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+        },
+      }),
+    },
+    digitBoxFilled: {
+      borderColor: C.borderStrong ?? C.border,
+      backgroundColor: isDark ? C.bgCardHover : C.bgCardSolid,
+    },
+    // ── Error ──────────────────────────────────────────────────────────────
+    errorWrap: {
+      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : 'rgba(220, 38, 38, 0.08)',
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(220, 38, 38, 0.3)',
+      borderRadius: 10,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      marginBottom: 8,
+    },
+    errorText: {
+      color: isDark ? '#F87171' : '#DC2626',
+      fontSize: 12,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    // ── Resend ─────────────────────────────────────────────────────────────
+    resendRow: {
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    countdownText: {
+      color: C.textSecondary,
+      fontSize: 13,
+    },
+    timerBold: {
+      fontWeight: '800',
+      color: C.textPrimary,
+      fontVariant: ['tabular-nums'],
+    },
+    resendLink: {
+      color: C.accentText,
+      fontSize: 13,
+      fontWeight: '700',
+      textDecorationLine: 'underline',
+    },
+    // ── Buttons ────────────────────────────────────────────────────────────
+    actions: {
+      gap: 10,
+    },
+    primaryBtn: {
+      backgroundColor: C.bgSecondary ?? C.bgInput,
+      borderRadius: 16,
+      paddingVertical: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    primaryBtnReady: {
+      backgroundColor: C.accent,
+      ...Platform.select({
+        ios: {
+          shadowColor: C.accent,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.45,
+          shadowRadius: 16,
+        },
+        android: { elevation: 6 },
+      }),
+    },
+    primaryBtnDisabled: {
+      opacity: 0.6,
+    },
+    primaryBtnText: {
+      color: C.textMuted,
+      fontSize: 15,
+      fontWeight: '700',
+      letterSpacing: -0.2,
+    },
+    primaryBtnTextReady: {
+      color: C.onAccent,
+      fontWeight: '800',
+    },
+    cancelBtn: {
+      paddingVertical: 10,
+      alignItems: 'center',
+    },
+    cancelBtnText: {
+      color: C.textSecondary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+  });
+}
+

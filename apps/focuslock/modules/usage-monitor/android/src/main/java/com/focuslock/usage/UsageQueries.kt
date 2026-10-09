@@ -33,12 +33,12 @@ object UsageQueries {
     const val KEYGUARD_HIDDEN = 16                               // API 29+
   }
 
-  /** True only when Android confirms the app holds Usage Access. */
-  fun isUsageAccessGranted(context: Context): Boolean {
+  /** Raw AppOps mode for GET_USAGE_STATS (MODE_ALLOWED / MODE_DEFAULT / MODE_ERRORED). */
+  fun usageAccessAppOpsMode(context: Context): Int {
     return try {
       val appOps = context.getSystemService(Context.APP_OPS_SERVICE)
         as android.app.AppOpsManager
-      val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         appOps.unsafeCheckOpNoThrow(
           android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
           android.os.Process.myUid(),
@@ -52,9 +52,49 @@ object UsageQueries {
           context.packageName
         )
       }
-      mode == android.app.AppOpsManager.MODE_ALLOWED
+    } catch (t: Throwable) {
+      ULog.w("Usage", "usageAccessAppOpsMode failed", t)
+      android.app.AppOpsManager.MODE_ERRORED
+    }
+  }
+
+  /**
+   * True only when Android confirms the app holds Usage Access.
+   *
+   * Two-step because several OEM ROMs (Xiaomi/HyperOS, Oppo/Realme, Huawei)
+   * report MODE_DEFAULT for GET_USAGE_STATS even after the user has flipped
+   * the Usage Access toggle — treating that as "denied" would keep the app in
+   * a permanent "not allowed" loop AND prevent the monitor service from ever
+   * starting. In that case we verify *by doing*: access is only claimed when
+   * the system actually hands back usage data.
+   */
+  fun isUsageAccessGranted(context: Context): Boolean {
+    return try {
+      when (usageAccessAppOpsMode(context)) {
+        android.app.AppOpsManager.MODE_ALLOWED -> true
+        else -> probeUsageDataAvailable(context)
+      }
     } catch (t: Throwable) {
       ULog.w("Usage", "isUsageAccessGranted failed", t)
+      false
+    }
+  }
+
+  /**
+   * "Verify by doing": usage access is real only if UsageStatsManager returns
+   * data. Returns true exclusively on a non-empty answer, so it can never
+   * claim granted by accident (an unprivileged caller gets an empty list).
+   */
+  private fun probeUsageDataAvailable(context: Context): Boolean {
+    return try {
+      val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+      val end = System.currentTimeMillis()
+      val begin = end - 24 * 60 * 60 * 1000L
+      @Suppress("DEPRECATION")
+      val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, end)
+      !stats.isNullOrEmpty()
+    } catch (t: Throwable) {
+      ULog.w("Usage", "usage probe failed", t)
       false
     }
   }

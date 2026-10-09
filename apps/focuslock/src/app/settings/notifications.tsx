@@ -157,7 +157,9 @@ export default function NotificationsSettingsScreen() {
         {/* Status banner */}
         {statusMsg && (
           <View style={[styles.statusBanner, statusMsg.ok ? styles.statusOk : styles.statusErr]}>
-            <Text style={styles.statusText}>{statusMsg.ok ? '✓ ' : '✕ '}{statusMsg.text}</Text>
+            <Text style={[styles.statusText, statusMsg.ok ? styles.statusTextOk : styles.statusTextErr]}>
+              {statusMsg.text}
+            </Text>
           </View>
         )}
 
@@ -226,7 +228,9 @@ function createNotifStyles(colors: any, isDark: boolean) {
   },
   statusOk: { backgroundColor: isDark ? 'rgba(16,185,129,0.16)' : '#f0fdf4', borderWidth: 1, borderColor: isDark ? 'rgba(16,185,129,0.3)' : '#bbf7d0' },
   statusErr: { backgroundColor: isDark ? 'rgba(239,68,68,0.16)' : '#fef2f2', borderWidth: 1, borderColor: isDark ? 'rgba(239,68,68,0.3)' : '#fecaca' },
-  statusText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  statusText: { fontSize: 14, fontWeight: '600' },
+  statusTextOk: { color: isDark ? '#6EE7B7' : '#047857' },
+  statusTextErr: { color: isDark ? '#FCA5A5' : '#DC2626' },
   hint: {
     color: colors.textMuted,
     fontSize: 13,

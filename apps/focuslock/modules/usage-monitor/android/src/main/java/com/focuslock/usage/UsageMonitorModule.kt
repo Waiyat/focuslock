@@ -1,6 +1,8 @@
 package com.focuslock.usage
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -51,23 +53,7 @@ class UsageMonitorModule : Module() {
     }
 
     AsyncFunction("openUsageAccessSettings") {
-      val ctx = appContext.reactContext
-      if (ctx != null) {
-        try {
-          ctx.startActivity(
-            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          )
-        } catch (t: Throwable) {
-          ULog.w("Bridge", "USAGE_ACCESS_SETTINGS unavailable — opening Settings", t)
-          try {
-            ctx.startActivity(
-              Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-          } catch (ignored: Throwable) {
-          }
-        }
-      }
+      appContext.reactContext?.let { openUsageAccessSettings(it) }
     }
 
     AsyncFunction("openOverlaySettings") {
@@ -194,6 +180,51 @@ class UsageMonitorModule : Module() {
     AsyncFunction("rebuildUsageState") {
       Engine.rebuildNow()
       true
+    }
+  }
+}
+
+/**
+ * Opens the most specific Settings screen this device offers for granting
+ * Usage Access.
+ *
+ * The stock `ACTION_USAGE_ACCESS_SETTINGS` activity does not exist on every
+ * OEM ROM (Xiaomi/HyperOS, Oppo/Realme ColorOS, Huawei EMUI, some Android Go
+ * builds), and on a few of those it resolves to a list that hides
+ * third-party apps. Walking a fallback chain — ending on FocusLock's own
+ * App-info page, which always resolves — means the button always lands
+ * somewhere the user can act, instead of silently dropping them on the
+ * Settings home screen where they conclude the app "isn't allowing" it.
+ */
+private fun openUsageAccessSettings(ctx: Context) {
+  val attempts: List<() -> Intent> = listOf(
+    // 1. Stock AOSP "Usage access" app list.
+    { Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS) },
+    // 2. AOSP App Ops screen — resolves on many ROMs where (1) is missing.
+    { Intent("android.settings.APP_OPS_SETTINGS") },
+    // 3. Xiaomi / MIUI / HyperOS permission editor.
+    {
+      Intent("miui.intent.action.APP_PERM_EDITOR")
+        .setPackage("com.miui.securitycenter")
+        .putExtra("extra_pkgname", ctx.packageName)
+    },
+    // 4. Generic "Apps" list.
+    { Intent(Settings.ACTION_APPLICATION_SETTINGS) },
+    // 5. Always resolves: FocusLock's own App-info page.
+    {
+      Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:${ctx.packageName}")
+      )
+    }
+  )
+
+  for (attempt in attempts) {
+    try {
+      ctx.startActivity(attempt().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      return
+    } catch (t: Throwable) {
+      ULog.w("Bridge", "usage-access settings intent unavailable — trying next", t)
     }
   }
 }

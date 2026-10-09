@@ -359,7 +359,7 @@ export default function SettingsScreen() {
             />
           </View>
           <Text style={styles.footerName}>FocusLock</Text>
-          <Text style={styles.footerVersion}>Version 1.0.3</Text>
+          <Text style={styles.footerVersion}>Version 1.1.5</Text>
           <Text style={styles.footerCopy}>Waiyat Labs Inc. All rights reserved.</Text>
         </View>
       </ScrollView>

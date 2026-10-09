@@ -1,104 +1,123 @@
 import React from 'react';
-import { Text, ScrollView, View, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { SubHeader, useSharedStyles } from './_shared';
+import { ThemeColors } from '../../lib/theme';
 
-const PRIVACY_SECTIONS = [
+const APP_VERSION = '1.1.5';
+const LAST_UPDATED = 'October 2026';
+const SUPPORT_EMAIL = 'support@waiyatlabs.space';
+
+interface PrivacySection { title: string; body: string }
+
+// NOTE: Review every section against what FocusLock actually collects and
+// does before publishing. These reflect only what the Terms screen states.
+const PRIVACY_SECTIONS: PrivacySection[] = [
   {
-    title: '1. Our Privacy Commitment',
-    body: 'At FocusLock, privacy is not an afterthought—it is foundational to how we build software. We believe your screen-time habits and personal focus choices belong exclusively to you. We do not monetize your attention, track your browsing activity, or sell your telemetry data to data brokers or advertising networks.',
+    title: 'Overview',
+    body:
+      'This Privacy Policy explains what information FocusLock collects, how it is used, and the choices you have. We aim to collect only what is needed to provide screen-time management and keep your account working.',
   },
   {
-    title: '2. Information We Collect',
-    body: 'We collect only the minimal data required to provide and synchronize your digital wellbeing settings:\n• Account Information: Your email address, username, and authentication tokens created during sign up.\n• FocusLock Configuration: The specific app packages you choose to restrict, your daily allocated time limits, strictness settings, and chosen reset times.\n• Daily Usage Counters: Aggregate minutes spent per restricted application today, necessary to determine when lock triggers engage.',
+    title: 'Information We Collect',
+    body:
+      'Account information, such as your email address and the credentials you use to sign in. App usage information, such as which apps you select to limit and the time spent in them, which is used to enforce your daily thresholds. Basic technical information, such as device model and app version, to help us fix issues.',
   },
   {
-    title: '3. What We Never Collect',
-    body: 'FocusLock is strictly an enforcement and timer utility. We NEVER monitor or access:\n• In-app text, chats, emails, or personal messages.\n• Browsing history, URLs visited, or web searches.\n• Keystrokes, passwords, or personal credentials.\n• Photos, camera feeds, audio recordings, or location data.\n• Contact lists or personal files.',
+    title: 'Device Permissions',
+    body:
+      'FocusLock uses system permissions such as Usage Stats or Accessibility on Android to measure foreground app usage and display lock overlays when a limit is reached. These permissions are used on your device for enforcement and are not used to read the content of your messages, passwords, or other personal data.',
   },
   {
-    title: '4. How Your Data Is Used',
-    body: 'Data collected by FocusLock is utilized strictly for:\n• Enforcing your designated screen-time limits on your device.\n• Synchronizing your restrictions and streak records across authenticated sessions.\n• Triggering local warnings (e.g., 15 minutes before daily limit lockout).\n• Executing daily usage resets at your specified reset hour.',
+    title: 'How We Use Information',
+    body:
+      'We use information to provide and enforce your limits, maintain your account, improve reliability and performance, respond to support requests, and keep the Application secure. We do not use your information to show third-party advertising.',
   },
   {
-    title: '5. Data Storage & Military-Grade Encryption',
-    body: 'All communications between the Application and our backend are encrypted via modern TLS 1.3 transport security. Remote database records are safeguarded using Postgres Row-Level Security (RLS) and AES-256 encryption at rest. Device-side authentication tokens are stored securely within your hardware device enclave (iOS Keychain / Android Keystore).',
+    title: 'On-Device Processing',
+    body:
+      'Usage monitoring and limit enforcement happen on your device. Information that leaves your device is limited to what is needed to operate your account and, where applicable, sync your settings.',
   },
   {
-    title: '6. Zero Third-Party Sharing or Advertising',
-    body: 'We do not sell, rent, lease, or monetize your personal usage information to any third parties. We do not embed ad-tracking SDKs, marketing trackers, or cross-app behavioral analytic systems in the Application.',
+    title: 'Sharing of Information',
+    body:
+      'We do not sell your personal information. We may share limited information with service providers who help us operate the Application, or when required by law or to protect the rights and safety of users and Waiyat Labs.',
   },
   {
-    title: '7. Data Retention & Account Deletion',
-    body: 'You maintain absolute control over your personal data. You can inspect or update your account details at any time in Account Settings. If you choose to delete your account, you can initiate immediate, permanent deletion directly inside the app, which removes all associated database records and tokens within 30 days.',
+    title: 'Data Retention and Deletion',
+    body:
+      'We keep your information for as long as your account is active or as needed to provide the service. You may request deletion of your account and associated data at any time by contacting us, and we will process the request within a reasonable period.',
   },
   {
-    title: '8. Children’s Privacy',
-    body: 'FocusLock is not directed toward individuals under the age of 13. We do not knowingly solicit or collect personally identifiable information from children under 13.',
+    title: 'Security',
+    body:
+      'We use reasonable technical and organizational measures to protect your information. No method of storage or transmission is completely secure, so we cannot guarantee absolute security.',
   },
   {
-    title: '9. Updates to this Privacy Policy',
-    body: 'We may periodically update this policy to reflect enhancements in our features or changes in regulatory standards. We will alert you to meaningful revisions by updating the date below and notifying you within the Application.',
+    title: "Children's Privacy",
+    body:
+      'FocusLock is not directed to children under 13, and we do not knowingly collect personal information from them. If you believe a child has provided us information, contact us and we will delete it.',
+  },
+  {
+    title: 'Changes to This Policy',
+    body:
+      'We may update this Privacy Policy from time to time. When we do, we will update the "Last Updated" date shown above. Continued use of FocusLock after any revision constitutes acceptance of the updated policy.',
   },
 ];
 
-export default function PrivacyPolicyScreen() {
+export default function PrivacyScreen() {
   const router = useRouter();
   const { sh, isDark, colors } = useSharedStyles();
-  const styles = createPrivacyPolicyStyles(colors, isDark);
+  const styles = createPrivacyStyles(colors, isDark);
 
-  const handleContactPrivacy = () => {
-    Linking.openURL('mailto:privacy@waiyatlabs.space?subject=Privacy%20Inquiry%20FocusLock');
+  const openSupport = () => {
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('FocusLock Privacy Inquiry')}`);
   };
 
   return (
     <SafeAreaView style={sh.safe} edges={['top']}>
       <SubHeader title="Privacy Policy" onBack={() => router.back()} />
-      <ScrollView
-        style={sh.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Hero Card */}
-        <View style={styles.heroCard}>
-          <Text style={styles.heroBadge}>PRIVACY FIRST</Text>
-          <Text style={styles.heroTitle}>FocusLock Privacy Policy</Text>
-          <Text style={styles.heroSubtitle}>
-            How we protect your personal information, on-device usage, and account security.
-          </Text>
-          <View style={styles.versionPill}>
-            <Text style={styles.versionText}>Version 1.0 · Last Updated: September 2024</Text>
+      <ScrollView style={sh.scroll} contentContainerStyle={sh.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.wrap}>
+          {/* Intro */}
+          <View style={styles.introCard}>
+            <Text style={styles.introTitle}>FocusLock Privacy Policy</Text>
+            <Text style={styles.introBody}>
+              Your focus is personal. This policy describes what information FocusLock handles and how we protect it.
+            </Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.metaText}>Version {APP_VERSION}</Text>
+              <View style={styles.metaDot} />
+              <Text style={styles.metaText}>Updated {LAST_UPDATED}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Section Cards */}
-        {PRIVACY_SECTIONS.map((section) => (
-          <View key={section.title} style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.sectionBody}>{section.body}</Text>
+          {PRIVACY_SECTIONS.map((section, i) => (
+            <View key={section.title}>
+              <Text style={sh.sectionLabel}>{`${i + 1}. ${section.title}`}</Text>
+              <View style={sh.card}>
+                <View style={styles.sectionBodyWrap}>
+                  <Text style={styles.sectionBody}>{section.body}</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+
+          {/* Contact */}
+          <Text style={sh.sectionLabel}>Questions</Text>
+          <View style={sh.card}>
+            <TouchableOpacity style={sh.row} onPress={openSupport} activeOpacity={0.6}>
+              <View style={sh.rowBody}>
+                <Text style={[sh.rowLabel, { color: colors.accentText }]}>Contact Support</Text>
+                <Text style={sh.rowSub}>{SUPPORT_EMAIL}</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
           </View>
-        ))}
 
-        {/* Contact & Support Card */}
-        <View style={styles.contactCard}>
-          <Text style={styles.contactTitle}>Privacy Concerns or Data Requests?</Text>
-          <Text style={styles.contactBody}>
-            For questions regarding data practices, export requests, or privacy inquiries, contact our Data Protection team.
-          </Text>
-          <TouchableOpacity
-            style={styles.contactButton}
-            onPress={handleContactPrivacy}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.contactButtonText}>Contact privacy@waiyatlabs.space</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footerNoteWrap}>
-          <Text style={styles.footerNoteText}>
-            Waiyat Labs Inc. All rights reserved. FocusLock complies with strict digital privacy guidelines.
+          <Text style={styles.footer}>
+            {'Waiyat Labs. All rights reserved.\nFocusLock is a digital wellbeing product of Waiyat Labs.'}
           </Text>
         </View>
       </ScrollView>
@@ -106,124 +125,74 @@ export default function PrivacyPolicyScreen() {
   );
 }
 
-function createPrivacyPolicyStyles(colors: any, isDark: boolean) {
+function createPrivacyStyles(C: ThemeColors, isDark: boolean) {
   return StyleSheet.create({
-  scrollContent: {
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  heroCard: {
-    backgroundColor: isDark ? colors.bgCardSolid : '#ffffff',
-    borderRadius: 14,
-    padding: 20,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  heroBadge: {
-    color: '#34c759',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  heroTitle: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    marginBottom: 6,
-  },
-  heroSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 14,
-  },
-  versionPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: isDark ? colors.bgInput : '#f2f2f7',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  versionText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  sectionCard: {
-    backgroundColor: isDark ? colors.bgCardSolid : '#ffffff',
-    borderRadius: 14,
-    padding: 18,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    marginBottom: 8,
-  },
-  sectionBody: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
-    letterSpacing: -0.2,
-  },
-  contactCard: {
-    backgroundColor: isDark ? colors.bgCardSolid : '#ffffff',
-    borderRadius: 14,
-    padding: 18,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  contactTitle: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  contactBody: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 14,
-  },
-  contactButton: {
-    backgroundColor: isDark ? colors.bgInput : '#f2f2f7',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  contactButtonText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  footerNoteWrap: {
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  footerNoteText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
+    wrap: {
+      width: '100%',
+      maxWidth: 680,
+      alignSelf: 'center',
+    },
+    introCard: {
+      backgroundColor: isDark ? C.bgCardSolid : '#ffffff',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: C.border,
+      padding: 18,
+      marginHorizontal: 16,
+      marginBottom: 24,
+    },
+    introTitle: {
+      color: C.textPrimary,
+      fontSize: 20,
+      fontWeight: '700',
+      letterSpacing: -0.4,
+      marginBottom: 6,
+    },
+    introBody: {
+      color: C.textSecondary,
+      fontSize: 14,
+      lineHeight: 20,
+      marginBottom: 14,
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    metaText: {
+      color: C.textMuted,
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.2,
+    },
+    metaDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 2,
+      backgroundColor: C.textMuted,
+    },
+    sectionBodyWrap: {
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+    },
+    sectionBody: {
+      color: C.textSecondary,
+      fontSize: 15,
+      lineHeight: 22,
+    },
+    chevron: {
+      color: C.textMuted,
+      fontSize: 22,
+      fontWeight: '300',
+      lineHeight: 24,
+    },
+    footer: {
+      color: C.textMuted,
+      fontSize: 12,
+      textAlign: 'center',
+      lineHeight: 18,
+      marginHorizontal: 32,
+      marginTop: 4,
+    },
   });
 }

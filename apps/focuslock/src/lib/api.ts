@@ -319,7 +319,15 @@ export async function deleteAccount(accessToken: string): Promise<ApiResponse<{ 
 export type DeviceSessionPayload = {
   deviceUuid: string;
   deviceName: string;
-  platform: 'ios' | 'android';
+  platform: 'ios' | 'android' | 'web';
+};
+
+/** Precise tri-state from GET /api/devices/session/status. */
+export type DeviceSessionStatus = {
+  active: boolean;
+  status?: 'active' | 'superseded' | 'unregistered';
+  deviceName?: string | null;
+  anotherDeviceActive?: boolean;
 };
 
 /**
@@ -329,7 +337,7 @@ export type DeviceSessionPayload = {
 export async function registerDeviceSession(
   accessToken: string,
   payload: DeviceSessionPayload
-): Promise<ApiResponse<{ active: boolean }>> {
+): Promise<ApiResponse<DeviceSessionStatus>> {
   try {
     const baseUrl = getBackendBaseUrl();
     const res = await fetchWithTimeout(
@@ -344,17 +352,17 @@ export async function registerDeviceSession(
       },
       10000
     );
-    return handleResponse<{ active: boolean }>(res);
+    return handleResponse<DeviceSessionStatus>(res);
   } catch (err: any) {
     return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
   }
 }
 
-/** Returns whether THIS install is still the account's active device. */
+/** Returns precise status for THIS install's current session. */
 export async function getDeviceSessionStatus(
   accessToken: string,
   deviceUuid: string
-): Promise<ApiResponse<{ active: boolean }>> {
+): Promise<ApiResponse<DeviceSessionStatus>> {
   try {
     const baseUrl = getBackendBaseUrl();
     const res = await fetchWithTimeout(
@@ -369,7 +377,7 @@ export async function getDeviceSessionStatus(
       },
       8000
     );
-    return handleResponse<{ active: boolean }>(res);
+    return handleResponse<DeviceSessionStatus>(res);
   } catch (err: any) {
     return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
   }

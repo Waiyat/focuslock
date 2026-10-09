@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Easing,
   StyleSheet,
   Pressable,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -49,12 +51,66 @@ const FEATURE_CARDS = [
   },
 ];
 
+// ─── Responsive layout helper (layout only, no animation involved) ───────────
+//
+// Everything that used to be a fixed number and could overflow on small or
+// unusual screens is derived here from the real window size and the user's
+// system font scale.
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+// Widest headline line ("limits before" / "Decide your") measured in "em" at
+// weight 800, with a safety margin. Letter-spacing (-1.2) gives extra slack.
+const WIDEST_HEADLINE_EM = 6.2;
+// The text column may never grow past this multiple of the user's font scale.
+const MAX_FONT_MULT = 1.15;
+
+function computeLayout(width: number, height: number, fontScale: number) {
+  const compact = height < 720; // iPhone SE / mini, small Androids
+  const tiny    = height < 620; // very small / split-screen windows
+
+  const padH         = clamp(Math.round(width * 0.058), 18, 32); // 22 on a 375pt screen
+  const contentWidth = width - padH * 2;
+
+  // Left text column: ~60% of content so the phone graphic stays visible
+  // on the right. Capped so tablets don't get a giant headline.
+  const headlineWidth = Math.min(contentWidth * 0.6, 380);
+
+  const fontMult = clamp(fontScale, 1, MAX_FONT_MULT);
+  const sizeCap  = tiny ? 26 : compact ? 30 : 40;
+  const headlineSize = clamp(
+    Math.floor(headlineWidth / (WIDEST_HEADLINE_EM * fontMult)),
+    22,
+    sizeCap,
+  );
+
+  return {
+    compact,
+    tiny,
+    padH,
+    headlineWidth,
+    headlineSize,
+    headlineLineHeight: Math.round(headlineSize * 1.2),
+
+    subtitleSize: compact ? 12.5 : 13.5,
+    subtitleLineHeight: compact ? 18 : 20,
+
+    sectionGap: tiny ? 12 : compact ? 14 : 20,
+    cardGap: compact ? 8 : 10,
+    cardPadV: tiny ? 9 : compact ? 11 : 14,
+    badgeSize: compact ? 36 : 40,
+
+    buttonPadV: tiny ? 13 : compact ? 15 : 18,
+    ctaGap: compact ? 8 : 10,
+  };
+}
+
 // ─── Haptic helpers ───────────────────────────────────────────────────────────
 
 async function tickHaptic() {
   if (Platform.OS === 'web') return;
   try {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   } catch {
     /* graceful no-op */
   }
@@ -77,6 +133,10 @@ async function confirmHaptic() {
 
 export default function HomeScreen() {
   const router = useRouter();
+
+  // Live window metrics (updates on rotation, split-screen, font-size changes)
+  const { width, height, fontScale } = useWindowDimensions();
+  const L = useMemo(() => computeLayout(width, height, fontScale), [width, height, fontScale]);
 
   // Phase: 'checking-auth' → 'intro' → 'home'
   const [phase, setPhase] = useState<'checking-auth' | 'intro' | 'home'>('checking-auth');
@@ -256,13 +316,15 @@ export default function HomeScreen() {
 
     // 3. Each letter fades out one by one. When the last letter fades out, comes the homescreen!
     const startPerLetterFadeOut = () => {
-      let fadeIdx = 0;
+      // Erase back-to-front so the word shrinks:
+      // "FocusLock" → "FocusLoc" → "FocusLo" → "FocusL" → …
+      let fadeIdx = BRAND_CHARS.length - 1;
 
       const fadeNextLetter = () => {
         if (!isMounted.current) return;
         const currentIdx = fadeIdx;
-        fadeIdx++;
-        const isLastLetter = fadeIdx === BRAND_CHARS.length;
+        fadeIdx--;
+        const isLastLetter = fadeIdx < 0;
 
         Animated.timing(letterOpacities[currentIdx], {
           toValue: 0,
@@ -319,6 +381,16 @@ export default function HomeScreen() {
     return <View style={styles.checkingContainer} />;
   }
 
+  // Per-line headline style: size/line-height come from the live window metrics.
+  const hl = { fontSize: L.headlineSize, lineHeight: L.headlineLineHeight };
+  // Safety net: if a line is ever a hair too wide, shrink it instead of wrapping.
+  const hlFit = {
+    numberOfLines: 1,
+    adjustsFontSizeToFit: true,
+    minimumFontScale: 0.7,
+    maxFontSizeMultiplier: MAX_FONT_MULT,
+  } as const;
+
   return (
     <View style={styles.rootContainer}>
       <RNStatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -328,10 +400,13 @@ export default function HomeScreen() {
         style={[styles.homeRoot, { opacity: homeOpacity }]}
         pointerEvents={phase === 'home' ? 'auto' : 'none'}
       >
-        {/* Background — glassy bokeh office photo with 3D phone graphic */}
+        {/* Background — glassy bokeh office photo with 3D phone graphic.
+            Anchored to the right so the phone graphic stays in view on
+            narrower screens (the left side is cropped instead). */}
         <Image
           source={require('../../assets/bg-home.jpg')}
           contentFit="cover"
+          contentPosition={{ top: '50%', right: 0 }}
           priority="high"
           style={styles.backgroundImage}
         />
@@ -344,9 +419,12 @@ export default function HomeScreen() {
         {/* Subtle top-left atmospheric haze */}
         <View style={styles.ambientGlowTopLeft} />
 
-        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <SafeAreaView
+          edges={['top', 'bottom']}
+          style={[styles.safeArea, { paddingHorizontal: L.padH }]}
+        >
 
-          {/* ── Header Bar ── */}
+          {/* ── Header Bar (fixed, never overlapped) ── */}
           <Animated.View style={[styles.headerBar, { opacity: headerOpacity }]}>
             {/* Brand lockup: sphere logo + FocusLock wordmark + tagline */}
             <View style={styles.brandGroup}>
@@ -358,11 +436,13 @@ export default function HomeScreen() {
                 />
               </View>
               <View style={styles.brandTextGroup}>
-                <Text style={styles.brandWordmark}>
+                <Text style={styles.brandWordmark} maxFontSizeMultiplier={1.15}>
                   <Text style={styles.brandWordmarkWhite}>Focus</Text>
                   <Text style={styles.brandWordmarkGreen}>Lock</Text>
                 </Text>
-                <Text style={styles.brandTagline}>Focus  /  Block  /  Achieve</Text>
+                <Text style={styles.brandTagline} maxFontSizeMultiplier={1.15}>
+                  Focus  /  Block  /  Achieve
+                </Text>
               </View>
             </View>
 
@@ -372,43 +452,70 @@ export default function HomeScreen() {
               onPress={() => router.push('/(auth)/login')}
               style={styles.headerSignInButton}
             >
-              <Text style={styles.headerSignInText}>Sign In</Text>
+              <Text style={styles.headerSignInText} maxFontSizeMultiplier={1.15}>Sign In</Text>
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ── Main Hero Content ── */}
-          <View style={styles.mainContent}>
+          {/* ── Main Hero Content ──
+              A ScrollView that centers its content when it fits and scrolls
+              when it does not, so it can never run under the header or CTA. */}
+          <ScrollView
+            style={styles.mainScroll}
+            contentContainerStyle={[styles.mainContent, { gap: L.sectionGap }]}
+            showsVerticalScrollIndicator={false}
+            alwaysBounceVertical={false}
+            overScrollMode="never"
+            keyboardShouldPersistTaps="handled"
+          >
 
-            {/* Headline + subtitle — constrained to 66% width so phone graphic shows */}
+            {/* Headline + subtitle — constrained so phone graphic shows */}
             <Animated.View
               style={[styles.headlineContainer, { opacity: headlineOpacity, transform: [{ translateY: headlineY }] }]}
             >
-              <Text style={styles.kicker}>YOUR FOCUS. OUR PRIORITY.</Text>
+              <Text style={styles.kicker} maxFontSizeMultiplier={1.15}>YOUR FOCUS. OUR PRIORITY.</Text>
 
-              <View style={styles.headlineBlock}>
-                <Text style={styles.headlineLine1}>Decide your</Text>
-                <Text style={styles.headlineLine2}>limits before</Text>
-                <Text style={styles.headlineLine3}>distraction</Text>
-                <Text style={styles.headlineLine4}>does.</Text>
+              <View style={[styles.headlineBlock, { width: L.headlineWidth }]}>
+                <Text style={[styles.headlineLine1, hl]} {...hlFit}>Decide your</Text>
+                <Text style={[styles.headlineLine2, hl]} {...hlFit}>limits before</Text>
+                <Text style={[styles.headlineLine3, hl]} {...hlFit}>distraction</Text>
+                <Text style={[styles.headlineLine4, hl]} {...hlFit}>does.</Text>
               </View>
 
-              <Text style={styles.subtitle}>
+              <Text
+                style={[
+                  styles.subtitle,
+                  {
+                    fontSize: L.subtitleSize,
+                    lineHeight: L.subtitleLineHeight,
+                    maxWidth: L.headlineWidth + 8,
+                  },
+                ]}
+                maxFontSizeMultiplier={1.2}
+              >
                 Pre-commit your daily app allowances. Once your window closes, on-device limits lock in strictly until tomorrow's reset.
               </Text>
             </Animated.View>
 
             {/* ── Frosted Glass Feature Cards ── */}
             <Animated.View
-              style={[styles.cardsColumn, { opacity: cardsOpacity, transform: [{ translateY: cardsY }] }]}
+              style={[
+                styles.cardsColumn,
+                { gap: L.cardGap, opacity: cardsOpacity, transform: [{ translateY: cardsY }] },
+              ]}
             >
               {FEATURE_CARDS.map((card) => (
                 <TouchableOpacity
                   key={card.id}
                   activeOpacity={0.78}
-                  style={styles.featureCard}
+                  style={[styles.featureCard, { paddingVertical: L.cardPadV }]}
                 >
                   {/* Neon-green circular icon badge */}
-                  <View style={styles.featureIconBadge}>
+                  <View
+                    style={[
+                      styles.featureIconBadge,
+                      { width: L.badgeSize, height: L.badgeSize, borderRadius: L.badgeSize / 2 },
+                    ]}
+                  >
                     <Image
                       source={card.icon}
                       style={styles.featureIcon}
@@ -417,19 +524,22 @@ export default function HomeScreen() {
                   </View>
 
                   <View style={styles.featureCardText}>
-                    <Text style={styles.featureCardTitle}>{card.title}</Text>
-                    <Text style={styles.featureCardSubtitle}>{card.subtitle}</Text>
+                    <Text style={styles.featureCardTitle} maxFontSizeMultiplier={1.2}>{card.title}</Text>
+                    <Text style={styles.featureCardSubtitle} maxFontSizeMultiplier={1.2}>{card.subtitle}</Text>
                   </View>
 
                   <Text style={styles.featureChevron}>›</Text>
                 </TouchableOpacity>
               ))}
             </Animated.View>
-          </View>
+          </ScrollView>
 
-          {/* ── Bottom CTA Dock ── */}
+          {/* ── Bottom CTA Dock (fixed) ── */}
           <Animated.View
-            style={[styles.ctaSection, { opacity: ctaOpacity, transform: [{ translateY: ctaY }] }]}
+            style={[
+              styles.ctaSection,
+              { gap: L.ctaGap, opacity: ctaOpacity, transform: [{ translateY: ctaY }] },
+            ]}
           >
             {/* Neon-green Get Started pill */}
             <Pressable
@@ -438,8 +548,13 @@ export default function HomeScreen() {
               onPress={() => router.push('/(auth)/register')}
               style={{ width: '100%' }}
             >
-              <Animated.View style={[styles.primaryButton, { transform: [{ scale: buttonScale }] }]}>
-                <Text style={styles.primaryButtonText}>Get Started  →</Text>
+              <Animated.View
+                style={[
+                  styles.primaryButton,
+                  { paddingVertical: L.buttonPadV, transform: [{ scale: buttonScale }] },
+                ]}
+              >
+                <Text style={styles.primaryButtonText} maxFontSizeMultiplier={1.2}>Get Started  →</Text>
               </Animated.View>
             </Pressable>
 
@@ -448,20 +563,20 @@ export default function HomeScreen() {
               onPress={() => router.push('/(auth)/login')}
               style={styles.signInButton}
             >
-              <Text style={styles.signInText}>
+              <Text style={styles.signInText} maxFontSizeMultiplier={1.2}>
                 Already have an account?{'  '}
                 <Text style={styles.signInHighlight}>Sign In →</Text>
               </Text>
             </TouchableOpacity>
 
             <View style={styles.legalRow}>
-              <Text style={styles.legalMuted}>By continuing you agree to our </Text>
+              <Text style={styles.legalMuted} maxFontSizeMultiplier={1.2}>By continuing you agree to our </Text>
               <TouchableOpacity activeOpacity={0.7} onPress={handleTerms}>
-                <Text style={styles.legalLink}>Terms</Text>
+                <Text style={styles.legalLink} maxFontSizeMultiplier={1.2}>Terms</Text>
               </TouchableOpacity>
-              <Text style={styles.legalMuted}> and </Text>
+              <Text style={styles.legalMuted} maxFontSizeMultiplier={1.2}> and </Text>
               <TouchableOpacity activeOpacity={0.7} onPress={handlePrivacy}>
-                <Text style={styles.legalLink}>Privacy Policy</Text>
+                <Text style={styles.legalLink} maxFontSizeMultiplier={1.2}>Privacy Policy</Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -523,7 +638,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#09090b',
   },
 
-  // ── Intro ──────────────────────────────────────────────────────────────────
+  // ── Intro (unchanged) ──────────────────────────────────────────────────────
   introContainer: {
     ...StyleSheet.absoluteFill,
     backgroundColor: '#09090b',
@@ -601,12 +716,11 @@ const styles = StyleSheet.create({
     borderRadius: 110,
     backgroundColor: 'rgba(118,247,86,0.04)',
   },
+  // paddingHorizontal is applied dynamically (L.padH)
   safeArea: {
     flex: 1,
-    paddingHorizontal: 22,
     paddingTop: Platform.OS === 'ios' ? 10 : 18,
     paddingBottom: Platform.OS === 'ios' ? 6 : 12,
-    justifyContent: 'space-between',
   },
 
   // ── Header ─────────────────────────────────────────────────────────────────
@@ -615,11 +729,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: Platform.OS === 'ios' ? 4 : 8,
+    paddingBottom: 6,
   },
   brandGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flexShrink: 1,
   },
   brandSphere: {
     width: 44, height: 44, borderRadius: 22,
@@ -633,7 +749,7 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22,
     transform: [{ scale: 1.30 }],
   },
-  brandTextGroup: { gap: 1 },
+  brandTextGroup: { gap: 1, flexShrink: 1 },
   brandWordmark: {
     fontSize: 18,
     fontWeight: '800',
@@ -654,6 +770,7 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     paddingHorizontal: 18,
     paddingVertical: 9,
+    marginLeft: 10,
   },
   headerSignInText: {
     color: '#ffffff',
@@ -662,11 +779,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ── Main Content ────────────────────────────────────────────────────────────
-  mainContent: {
+  // ── Main Content (scrollable, centered when it fits) ───────────────────────
+  mainScroll: {
     flex: 1,
+  },
+  mainContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    gap: 20,
     paddingVertical: 14,
   },
   headlineContainer: { gap: 8 },
@@ -680,40 +799,41 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  // Constrained to 56% width so 3D phone graphic remains fully visible on the right
+  // Width is set dynamically (L.headlineWidth) so the 3D phone graphic
+  // remains visible on the right on every screen size.
   headlineBlock: {
-    maxWidth: '56%',
     gap: 0,
   },
+  // fontSize / lineHeight are applied dynamically (L.headlineSize)
   headlineLine1: {
     color: '#ffffff',
-    fontSize: 35, fontWeight: '800', lineHeight: 42, letterSpacing: -1.2,
+    fontWeight: '800', letterSpacing: -1.2,
     textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10,
   },
   headlineLine2: {
     color: NEON,
-    fontSize: 35, fontWeight: '800', lineHeight: 42, letterSpacing: -1.2,
+    fontWeight: '800', letterSpacing: -1.2,
     textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10,
   },
   headlineLine3: {
     color: NEON,
-    fontSize: 35, fontWeight: '800', lineHeight: 42, letterSpacing: -1.2,
+    fontWeight: '800', letterSpacing: -1.2,
     textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10,
   },
   headlineLine4: {
     color: '#ffffff',
-    fontSize: 35, fontWeight: '800', lineHeight: 42, letterSpacing: -1.2,
+    fontWeight: '800', letterSpacing: -1.2,
     textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10,
   },
+  // fontSize / lineHeight / maxWidth are applied dynamically
   subtitle: {
-    color: 'rgba(203,213,225,0.85)',
-    fontSize: 13.5, lineHeight: 20, letterSpacing: 0.1,
-    maxWidth: '58%',
+    color: 'rgba(203,213,225,0.92)',
+    letterSpacing: 0.1,
     textShadowColor: 'rgba(0,0,0,0.80)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6,
   },
 
   // ── Feature Cards (frosted glass) ──────────────────────────────────────────
-  cardsColumn: { gap: 10 },
+  cardsColumn: {},
   featureCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -723,10 +843,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.2,
     borderRadius: 20,
     paddingHorizontal: 18,
-    paddingVertical: 14,
   },
   featureIconBadge: {
-    width: 40, height: 40, borderRadius: 20,
     backgroundColor: NEON_DIM,
     borderColor: NEON_BORDER,
     borderWidth: 1.2,
@@ -746,15 +864,14 @@ const styles = StyleSheet.create({
 
   // ── Bottom CTA Section ─────────────────────────────────────────────────────
   ctaSection: {
-    gap: 10,
     alignItems: 'center',
+    paddingTop: 8,
     paddingBottom: 4,
   },
   // Vibrant neon-green pill — matching screenshot exactly
   primaryButton: {
     width: '100%',
     backgroundColor: NEON,
-    paddingVertical: 18,
     borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
@@ -770,8 +887,9 @@ const styles = StyleSheet.create({
   },
   signInButton: { paddingVertical: 4 },
   signInText: {
-    color: 'rgba(148,163,184,0.90)',
+    color: '#fff',
     fontSize: 14, letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
   signInHighlight: {
     color: NEON,
@@ -785,12 +903,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   legalMuted: {
-    color: 'rgba(100,116,139,0.80)',
+    color: 'rgba(255,255,255,0.88)',
     fontSize: 11, lineHeight: 18,
+    textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
+  // Was #000 (unreadable on dark areas) and a numeric fontWeight (invalid in RN)
   legalLink: {
-    color: 'rgba(203,213,225,0.80)',
+    color: '#ffffff',
     fontSize: 11, lineHeight: 18,
+    fontWeight: '700',
     textDecorationLine: 'underline',
+    textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
 });
