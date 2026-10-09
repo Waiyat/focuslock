@@ -1,0 +1,7 @@
+com.focuslock.usage.usage-monitor-pngs-0 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/build/generated/res/pngs/release
+com.focuslock.usage.usage-monitor-resValues-1 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/build/generated/res/resValues/release
+com.focuslock.usage.usage-monitor-mergeReleaseResources-2 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+com.focuslock.usage.usage-monitor-mergeReleaseResources-3 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+com.focuslock.usage.usage-monitor-release-4 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/build/intermediates/merged_res/release/mergeReleaseResources
+com.focuslock.usage.usage-monitor-main-5 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/res
+com.focuslock.usage.usage-monitor-release-6 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/release/res

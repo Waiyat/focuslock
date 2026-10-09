@@ -1,0 +1,104 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:1:1-57:12
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:1:1-57:12
+	package
+		INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml
+	xmlns:tools
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:2:3-49
+	xmlns:android
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.PACKAGE_USAGE_STATS
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:6:3-7:43
+	tools:ignore
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:7:5-40
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:6:20-73
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:11:3-75
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:11:20-72
+uses-permission#android.permission.FOREGROUND_SERVICE_SPECIAL_USE
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:12:3-87
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:12:20-84
+uses-permission#android.permission.RECEIVE_BOOT_COMPLETED
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:16:3-79
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:16:20-76
+application
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:18:3-56:17
+service#com.focuslock.usage.MonitorService
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:19:5-26:15
+	android:exported
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:21:7-31
+	android:foregroundServiceType
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:22:7-49
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:20:7-56
+property#android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:23:7-25:117
+	android:value
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:25:9-114
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:24:9-68
+receiver#com.focuslock.usage.BootReceiver
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:28:5-34:16
+	android:exported
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:30:7-31
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:29:7-54
+intent-filter#action:name:android.intent.action.BOOT_COMPLETED
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:31:7-33:23
+action#android.intent.action.BOOT_COMPLETED
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:32:9-71
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:32:17-68
+receiver#com.focuslock.usage.DevTestReceiver
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:38:5-48:16
+	android:exported
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:40:7-30
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:39:7-57
+intent-filter#action:name:com.focuslock.usage.DEV_DUMP_EVENTS+action:name:com.focuslock.usage.DEV_DUMP_STATUS+action:name:com.focuslock.usage.DEV_DUMP_USAGE+action:name:com.focuslock.usage.DEV_REBUILD+action:name:com.focuslock.usage.DEV_SET_LIMITS
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:41:7-47:23
+action#com.focuslock.usage.DEV_SET_LIMITS
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:42:9-69
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:42:17-66
+action#com.focuslock.usage.DEV_DUMP_STATUS
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:43:9-70
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:43:17-67
+action#com.focuslock.usage.DEV_DUMP_USAGE
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:44:9-69
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:44:17-66
+action#com.focuslock.usage.DEV_DUMP_EVENTS
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:45:9-70
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:45:17-67
+action#com.focuslock.usage.DEV_REBUILD
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:46:9-66
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:46:17-63
+activity#com.focuslock.usage.LockActivity
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:50:5-55:78
+	android:excludeFromRecents
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:53:7-40
+	android:launchMode
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:54:7-38
+	android:exported
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:52:7-31
+	android:theme
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:55:7-75
+	android:name
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:51:7-54
+uses-sdk
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml

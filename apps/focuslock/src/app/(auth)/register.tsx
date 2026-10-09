@@ -20,6 +20,7 @@ import {
   verifyRegisterOtp,
   resendRegisterOtp,
 } from '../../lib/api';
+import { claimDeviceSession } from '../../lib/deviceSession';
 import { playErrorFeedback } from '../../lib/feedback';
 
 export default function RegisterScreen() {
@@ -176,6 +177,7 @@ export default function RegisterScreen() {
   };
 
   const handleRegister = async () => {
+    if (isLoading) return; // belt-and-braces: the disabled button already guards this
     if (!validate()) return;
     setIsLoading(true);
 
@@ -207,13 +209,14 @@ export default function RegisterScreen() {
     setShowOtpModal(true);
   };
 
-  const handleVerifyOtp = async (code: string) => {
+  const handleVerifyOtp = async (code: string): Promise<boolean | string> => {
     const cleanEmail = email.trim().toLowerCase();
     const res = await verifyRegisterOtp(cleanEmail, code);
 
     if (res.error) {
-      showToast(res.error);
-      return false;
+      // Return the reason as a string so OtpModal shows it INLINE — toasts
+      // render behind this modal and would leave the shake unexplained.
+      return res.error;
     }
 
     // Account created in Supabase! Sign in immediately
@@ -222,15 +225,31 @@ export default function RegisterScreen() {
       password,
     });
 
+    if (signInError) {
+      // The account IS created and verified — hand off to login with context
+      // instead of dead-ending on a confusing error inside the OTP modal.
+      setShowOtpModal(false);
+      router.replace({
+        pathname: '/(auth)/login',
+        params: { flash: 'Your account is verified! Sign in with your password to continue.' },
+      });
+      return true;
+    }
+
     setShowOtpModal(false);
     showToast('Account created successfully!', 'success');
-
-    if (!signInError) {
-      // New accounts always go through onboarding to accept terms & grant permissions
-      router.replace('/onboarding');
-    } else {
-      router.replace('/(auth)/login');
+    // Single-device session: first claim for this brand-new account.
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        await claimDeviceSession(data.session.access_token);
+      }
+    } catch {
+      /* non-blocking — the foreground check retries when online */
     }
+    // New accounts always go through onboarding to accept terms & grant permissions
+    router.replace('/onboarding');
+    return true;
   };
 
   const handleResendOtp = async () => {
@@ -238,8 +257,8 @@ export default function RegisterScreen() {
     const res = await resendRegisterOtp(cleanEmail);
 
     if (res.error) {
-      showToast(res.error);
-      return false;
+      // Thrown → OtpModal displays it inline and keeps its cooldown intact.
+      throw new Error(res.error);
     }
 
     showToast(`A new verification code was sent to ${cleanEmail}.`, 'success');

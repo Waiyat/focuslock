@@ -285,10 +285,17 @@ export interface AppIconProps {
   fallbackBadge?: string;
   fallbackColor?: string;
   style?: any;
+  /**
+   * Real installed-app icon URI (Android provider `file://` cache path).
+   * When present it wins over bundled assets and remote lookups —
+   * the actual icon of the app the user selected.
+   */
+  iconUri?: string;
 }
 
 /**
  * Universal App Icon Component
+ * 0. Renders the real installed-app icon when the platform provider supplied one.
  * 1. Automatically renders bundled high-res icon if available (instant, offline).
  * 2. Attempts dynamic App Store artwork fetch for uncatalogued apps.
  * 3. Falls back to a clean branded monogram badge if unknown.
@@ -301,8 +308,9 @@ export function AppIcon({
   borderRadius,
   isLocked = false,
   fallbackBadge,
-  fallbackColor = '#2563EB',
+  fallbackColor = '#15803D',
   style,
+  iconUri,
 }: AppIconProps) {
   const radius = borderRadius ?? Math.round(size * 0.22);
   const localSource = getLocalAppIcon(bundleId, appName, appId);
@@ -310,7 +318,7 @@ export function AppIcon({
 
   useEffect(() => {
     let active = true;
-    if (!localSource && bundleId && !remoteUrl) {
+    if (!iconUri && !localSource && bundleId && !remoteUrl) {
       resolveAppIcon(bundleId).then((url) => {
         if (active && url) setRemoteUrl(url);
       });
@@ -318,7 +326,28 @@ export function AppIcon({
     return () => {
       active = false;
     };
-  }, [bundleId, localSource]);
+  }, [bundleId, localSource, iconUri]);
+
+  // 0. Real installed-app icon supplied by the platform provider
+  if (iconUri) {
+    return (
+      <View
+        style={[
+          styles.iconContainer,
+          { width: size, height: size, borderRadius: radius },
+          isLocked && styles.lockedContainer,
+          style,
+        ]}
+      >
+        <Image
+          source={{ uri: iconUri }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          contentFit="cover"
+        />
+        {isLocked && <View style={[styles.lockedOverlay, { borderRadius: radius }]} />}
+      </View>
+    );
+  }
 
   // 1. Bundled Local Icon
   if (localSource) {

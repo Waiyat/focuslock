@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml:2:13-83
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml:2:13-83
+	package
+		INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml
+	xmlns:android
+		ADDED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml:2:23-81
+uses-sdk
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml reason: use-sdk injection requested
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml
+INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml
+	android:targetSdkVersion
+		INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml
+	android:minSdkVersion
+		INJECTED from /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/tmp/ProcessLibraryManifest/debug/tempAndroidManifest6994986744099715930.xml

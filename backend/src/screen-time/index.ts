@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { supabaseAdmin } from '../database';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireActiveDevice } from '../middleware/auth';
 
 export const screenTimeRouter = Router();
 
 screenTimeRouter.use(requireAuth);
+// Single-device session enforcement — superseded devices get 409.
+screenTimeRouter.use(requireActiveDevice);
 
 /**
  * GET /api/screen-time/config

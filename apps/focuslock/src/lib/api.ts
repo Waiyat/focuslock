@@ -40,10 +40,53 @@ export type ApiResponse<T> = {
   error?: string;
 };
 
+/**
+ * Thrown when the deadline elapses. IMPORTANT: the request may still have
+ * reached the server (e.g. an email was already sent) even though we timed
+ * out — callers must use copy that reflects this.
+ */
+export class TimeoutError extends Error {
+  constructor() {
+    super('Request timed out. Please try again in a moment.');
+    this.name = 'TimeoutError';
+  }
+}
+
+const SEND_TIMEOUT_MESSAGE =
+  'Request timed out — your code may still arrive in your inbox. ' +
+  'Check there before requesting another one.';
+
+// ---------------------------------------------------------------------------
+// SINGLE-DEVICE SESSIONS — stable install id sent on every authenticated
+// request (x-device-uuid). The provider is registered by src/lib/deviceSession
+// so api.ts stays free of storage imports (no cycles).
+// ---------------------------------------------------------------------------
+
+let deviceUuidProvider: (() => Promise<string | null>) | null = null;
+
+/** Registered once by deviceSession.ts — enables the x-device-uuid header. */
+export function setDeviceUuidProvider(fn: () => Promise<string | null>) {
+  deviceUuidProvider = fn;
+}
+
+async function deviceHeaders(): Promise<Record<string, string>> {
+  try {
+    const id = deviceUuidProvider ? await deviceUuidProvider() : null;
+    return id ? { 'x-device-uuid': id } : {};
+  } catch {
+    return {};
+  }
+}
+
+function connectionError(err: any, timeoutMessage?: string): string {
+  if (err instanceof TimeoutError && timeoutMessage) return timeoutMessage;
+  return err?.message || 'Cannot connect to server. Please check your connection.';
+}
+
 /** Safe fetch wrapper with timeout supported across all Hermes & JS runtimes */
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Network request timed out. Please check your connection.')), timeoutMs)
+    setTimeout(() => reject(new TimeoutError()), timeoutMs)
   );
   return Promise.race([fetch(url, options), timeoutPromise]);
 }
@@ -76,14 +119,21 @@ export async function requestRegisterOtp(
 ): Promise<ApiResponse<{ message: string; email: string; cooldownSeconds: number }>> {
   try {
     const baseUrl = getBackendBaseUrl();
-    const res = await fetchWithTimeout(`${baseUrl}/api/auth/register-request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/auth/register-request`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      // Email delivery on a cold serverless backend can exceed the default
+      // 8s — a premature "connection error" here caused users to re-submit
+      // and receive duplicate codes.
+      25000
+    );
     return handleResponse<{ message: string; email: string; cooldownSeconds: number }>(res);
   } catch (err: any) {
-    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+    return { error: connectionError(err, SEND_TIMEOUT_MESSAGE) };
   }
 }
 
@@ -93,14 +143,18 @@ export async function verifyRegisterOtp(
 ): Promise<ApiResponse<{ message: string; userId: string; email: string; username: string }>> {
   try {
     const baseUrl = getBackendBaseUrl();
-    const res = await fetchWithTimeout(`${baseUrl}/api/auth/register-verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, code }),
-    });
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/auth/register-verify`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      },
+      20000
+    );
     return handleResponse<{ message: string; userId: string; email: string; username: string }>(res);
   } catch (err: any) {
-    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+    return { error: connectionError(err, 'Verification timed out. Please try again.') };
   }
 }
 
@@ -109,14 +163,18 @@ export async function resendRegisterOtp(
 ): Promise<ApiResponse<{ message: string; cooldownSeconds: number; remainingSeconds?: number }>> {
   try {
     const baseUrl = getBackendBaseUrl();
-    const res = await fetchWithTimeout(`${baseUrl}/api/auth/register-resend`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/auth/register-resend`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      },
+      25000
+    );
     return handleResponse<{ message: string; cooldownSeconds: number; remainingSeconds?: number }>(res);
   } catch (err: any) {
-    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+    return { error: connectionError(err, SEND_TIMEOUT_MESSAGE) };
   }
 }
 
@@ -129,14 +187,14 @@ export async function requestPasswordResetOtp(
 ): Promise<ApiResponse<{ message: string; email: string; cooldownSeconds: number }>> {
   try {
     const baseUrl = getBackendBaseUrl();
-    const res = await fetchWithTimeout(`${baseUrl}/api/auth/forgot-password-request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/auth/forgot-password-request`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) },
+      25000
+    );
     return handleResponse<{ message: string; email: string; cooldownSeconds: number }>(res);
   } catch (err: any) {
-    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+    return { error: connectionError(err, SEND_TIMEOUT_MESSAGE) };
   }
 }
 
@@ -146,14 +204,14 @@ export async function verifyPasswordResetOtp(
 ): Promise<ApiResponse<{ message: string; resetToken: string }>> {
   try {
     const baseUrl = getBackendBaseUrl();
-    const res = await fetchWithTimeout(`${baseUrl}/api/auth/forgot-password-verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, code }),
-    });
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/auth/forgot-password-verify`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) },
+      20000
+    );
     return handleResponse<{ message: string; resetToken: string }>(res);
   } catch (err: any) {
-    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+    return { error: connectionError(err, 'Verification timed out. Please try again.') };
   }
 }
 
@@ -162,14 +220,14 @@ export async function resendPasswordResetOtp(
 ): Promise<ApiResponse<{ message: string; cooldownSeconds: number; remainingSeconds?: number }>> {
   try {
     const baseUrl = getBackendBaseUrl();
-    const res = await fetchWithTimeout(`${baseUrl}/api/auth/forgot-password-resend`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/auth/forgot-password-resend`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) },
+      25000
+    );
     return handleResponse<{ message: string; cooldownSeconds: number; remainingSeconds?: number }>(res);
   } catch (err: any) {
-    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+    return { error: connectionError(err, SEND_TIMEOUT_MESSAGE) };
   }
 }
 
@@ -243,11 +301,75 @@ export async function deleteAccount(accessToken: string): Promise<ApiResponse<{ 
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
+          ...(await deviceHeaders()),
         },
       },
       10000
     );
     return handleResponse<{ message: string }>(res);
+  } catch (err: any) {
+    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SINGLE-DEVICE SESSIONS (latest login wins)
+// ---------------------------------------------------------------------------
+
+export type DeviceSessionPayload = {
+  deviceUuid: string;
+  deviceName: string;
+  platform: 'ios' | 'android';
+};
+
+/**
+ * Claims the account for THIS install — the backend retires every other
+ * registered device (latest login wins).
+ */
+export async function registerDeviceSession(
+  accessToken: string,
+  payload: DeviceSessionPayload
+): Promise<ApiResponse<{ active: boolean }>> {
+  try {
+    const baseUrl = getBackendBaseUrl();
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/devices/session`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      },
+      10000
+    );
+    return handleResponse<{ active: boolean }>(res);
+  } catch (err: any) {
+    return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
+  }
+}
+
+/** Returns whether THIS install is still the account's active device. */
+export async function getDeviceSessionStatus(
+  accessToken: string,
+  deviceUuid: string
+): Promise<ApiResponse<{ active: boolean }>> {
+  try {
+    const baseUrl = getBackendBaseUrl();
+    const res = await fetchWithTimeout(
+      `${baseUrl}/api/devices/session/status`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-device-uuid': deviceUuid,
+        },
+      },
+      8000
+    );
+    return handleResponse<{ active: boolean }>(res);
   } catch (err: any) {
     return { error: err?.message || 'Cannot connect to server. Please check your connection.' };
   }
@@ -267,6 +389,7 @@ export async function syncOnboardingCompleteToBackend(accessToken: string): Prom
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
+          ...(await deviceHeaders()),
         },
       },
       8000
@@ -287,6 +410,7 @@ export async function fetchOnboardingStatusFromBackend(accessToken: string): Pro
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
+          ...(await deviceHeaders()),
         },
       },
       8000

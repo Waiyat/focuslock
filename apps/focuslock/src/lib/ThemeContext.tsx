@@ -70,10 +70,12 @@ async function writeStoredMode(mode: ThemeMode): Promise<void> {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemSchemeHook = useColorScheme();
   const [systemScheme, setSystemScheme] = useState<'light' | 'dark'>(
+    // Default to dark — FocusLock is a dark-first app.
+    // If the OS explicitly reports light, we'll follow that after mount.
     systemSchemeHook === 'light' ? 'light' : 'dark'
   );
   const [isNight, setIsNight] = useState<boolean>(checkIsNightTime());
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('dark');
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Sync OS color scheme changes

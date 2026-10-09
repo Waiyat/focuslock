@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["com.focuslock.usage.UsageMonitorModule"]
+  }
+}

@@ -14,6 +14,7 @@ import {
   Animated,
   Easing,
   Alert,
+  AppState,
 } from 'react-native';
 import { R, S, getGlassCardShadow, ThemeColors } from '../lib/theme';
 import { useTheme } from '../lib/ThemeContext';
@@ -31,17 +32,27 @@ import { Toast } from '../components/ui/Toast';
 import { AppLimitSetupModal } from '../components/ui/AppLimitSetupModal';
 import { supabase } from '../lib/supabase';
 import { uploadAvatar } from '../lib/storage';
-import { playSelectionFeedback, playLightFeedback, playErrorFeedback, playSuccessFeedback } from '../lib/feedback';
+import { playSelectionFeedback, playLightFeedback, playErrorFeedback } from '../lib/feedback';
 import {
   notifyAppLocked,
-  notifyAppWarning,
   notifyDailyReset,
+  notifyLimitWarning,
   requestNotificationPermissions,
   registerPushToken,
 } from '../lib/notifications';
 import { AppIcon, resolveAppIcon, getCachedIcon } from '../lib/appIcons';
+import { usageEngine } from '../lib/usage/usageEngine';
+import { usageBridge, isUsageEngineAvailable } from '../lib/usage/usageBridge';
+import { checkDeviceSessionStillActive } from '../lib/deviceSession';
+import { getAppDisplayNames } from '../lib/appProvider';
+import { DEFAULT_WARNING_THRESHOLD_MS } from '../lib/usage/types';
+import type { UsageAccessStatus } from '../lib/usage/types';
+import { UsageAccessBanner } from '../components/ui/UsageAccessBanner';
 
 // App limit data model
+/** This app's own package — excluded from "most used" analytics (noise). */
+const SELF_PACKAGE = 'com.focuslock.app';
+
 interface AppLimitItem {
   id: string;
   app_bundle_id: string;
@@ -66,6 +77,97 @@ interface ResetWindowConfig {
   reset_time: string;
   timezone: string;
   window_minutes: number;
+}
+
+// -----------------------------------------------------------------------------
+// Timezone-aware reset helpers
+// -----------------------------------------------------------------------------
+
+/** Resolves a safe IANA timezone, falling back to the device timezone. */
+function resolveTimezone(tz?: string | null): string {
+  if (!tz) return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return tz;
+  } catch {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
+}
+
+/** Wall-clock parts of `date` as observed in `timeZone`. */
+function zonedParts(
+  date: Date,
+  timeZone: string
+): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? '0', 10);
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour') % 24,
+    minute: get('minute'),
+    second: get('second'),
+  };
+}
+
+/**
+ * Epoch ms of the next daily reset boundary (HH:MM in `timeZone`) at or after `nowMs`.
+ * Wall-clock arithmetic is used so DST shifts shift the boundary with local time.
+ */
+function nextResetMs(nowMs: number, resetTime: string, timeZone: string): number {
+  const [resetHour, resetMinute] = (resetTime || '08:00:00').split(':').map(Number);
+  const p = zonedParts(new Date(nowMs), timeZone);
+  const nowSec = p.hour * 3600 + p.minute * 60 + p.second;
+  const targetSec = ((resetHour || 0) % 24) * 3600 + ((resetMinute || 0) % 60) * 60;
+  let deltaSec = targetSec - nowSec;
+  if (deltaSec <= 0) deltaSec += 86400;
+  return nowMs + deltaSec * 1000;
+}
+
+/** Epoch ms of the most recent daily reset boundary at or before `nowMs`. */
+function lastResetMs(nowMs: number, resetTime: string, timeZone: string): number {
+  return nextResetMs(nowMs, resetTime, timeZone) - 86400 * 1000;
+}
+
+/** Formats an HH:MM:SS db time as a 12-hour clock, e.g. `8:00 AM`. */
+function formatClock(resetTime?: string | null): string {
+  const [rawH, rawM] = (resetTime || '08:00:00').split(':').map(Number);
+  const h = ((rawH || 0) % 24 + 24) % 24;
+  const m = ((rawM || 0) % 60 + 60) % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const displayH = h % 12 === 0 ? 12 : h % 12;
+  return `${displayH}:${m < 10 ? `0${m}` : m} ${period}`;
+}
+
+/** Short timezone label for display, e.g. `GMT+5` / `EDT`. */
+function timezoneLabel(timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(
+      new Date()
+    );
+    return parts.find((p) => p.type === 'timeZoneName')?.value || timeZone;
+  } catch {
+    return timeZone;
+  }
+}
+
+/** Formats a raw second count as `Xh Ym Zs`. */
+function formatHMS(totalSec: number): string {
+  const safe = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${h}h ${m < 10 ? '0' : ''}${m}m ${s < 10 ? '0' : ''}${s}s`;
 }
 
 // -----------------------------------------------------------------------------
@@ -161,6 +263,16 @@ function SkeletonBar({ width, height = 14, borderRadius = 7, style }: {
       style={[{ width, height, borderRadius, backgroundColor: '#c7c7cc', opacity }, style]}
     />
   );
+}
+
+/** Compact duration for analytics stats: "2h 05m", "45m", "12s". */
+function formatCompact(totalSec: number): string {
+  const s = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
 }
 
 /** Animated progress bar with spring overshoot */
@@ -288,20 +400,16 @@ interface AnimatedAppCardProps {
   app: AppLimitItem;
   index: number;
   formatSeconds: (sec: number) => string;
+  resetLabel: string;
   onPress?: () => void;
-  onAddUsage?: (appId: string, seconds: number) => void;
-  onLockApp?: (appId: string) => void;
-  onResetUsage?: (appId: string) => void;
 }
 
 function AnimatedAppCard({
   app,
   index,
   formatSeconds,
+  resetLabel,
   onPress,
-  onAddUsage,
-  onLockApp,
-  onResetUsage,
 }: AnimatedAppCardProps) {
   const styles = useDashboardStyles();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -334,7 +442,7 @@ function AnimatedAppCard({
   const used = app.used_seconds || 0;
   const remaining = Math.max(0, app.daily_limit_seconds - used);
   const isLocked = remaining <= 0;
-  const isWarning = !isLocked && remaining <= 600;
+  const isWarning = !isLocked && remaining <= DEFAULT_WARNING_THRESHOLD_MS / 1000;
 
   return (
     <Animated.View
@@ -370,12 +478,15 @@ function AnimatedAppCard({
           isWarning && styles.appCardWarningState,
         ]}
       >
+        {/* Glass depth: deep wash for locked state + top-edge sheen */}
+        {isLocked && <View pointerEvents="none" style={styles.lockedWash} />}
+        <View pointerEvents="none" style={styles.glassSheen} />
         <View style={styles.appCardTopRow}>
           <View style={styles.appCardLeft}>
             <AppIconImage app={app} size={40} isLocked={isLocked} />
             <View style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}>
-              <Text style={styles.appName} numberOfLines={1} ellipsizeMode="tail">{app.app_display_name}</Text>
-              <Text style={styles.appMeta} numberOfLines={1} ellipsizeMode="tail">
+              <Text style={[styles.appName, isLocked && styles.appCardTextLocked]} numberOfLines={1} ellipsizeMode="tail">{app.app_display_name}</Text>
+              <Text style={[styles.appMeta, isLocked && styles.appMetaLocked]} numberOfLines={1} ellipsizeMode="tail">
                 Limit: {formatSeconds(app.daily_limit_seconds)} • Used:{' '}
                 {formatSeconds(used)}
               </Text>
@@ -408,8 +519,14 @@ function AnimatedAppCard({
           </View>
         </View>
 
-        {/* Micro progress line inside card */}
-        <View style={styles.cardProgressTrack}>
+        {/* Refined progress line — state-tinted track and fill */}
+        <View
+          style={[
+            styles.cardProgressTrack,
+            isWarning && styles.cardProgressTrackWarning,
+            isLocked && styles.cardProgressTrackLocked,
+          ]}
+        >
           <View
             style={[
               styles.cardProgressFill,
@@ -420,50 +537,35 @@ function AnimatedAppCard({
           />
         </View>
 
-        {/* Interactive drawer revealed on tap */}
+        {(isLocked || isWarning) && (
+          <Text
+            style={[
+              styles.cardStatusNote,
+              isWarning && styles.cardStatusNoteWarning,
+              isLocked && styles.cardStatusNoteLocked,
+            ]}
+          >
+            {isLocked
+              ? `Locked — resets ${resetLabel}`
+              : `Warning: ${formatSeconds(remaining)} left — resets ${resetLabel}`}
+          </Text>
+        )}
+
+        {/* Details drawer revealed on tap — real allowance data only */}
         {isExpanded && (
-          <View style={styles.appCardDrawer}>
-            <View style={styles.drawerDivider} />
+          <View style={[styles.appCardDrawer, isLocked && styles.drawerOnDark]}>
+            <View style={[styles.drawerDivider, isLocked && styles.drawerDividerLocked]} />
             <View style={styles.drawerRow}>
-              <Text style={styles.drawerLabel}>Simulate Hardware Rules:</Text>
-              <View style={styles.drawerActions}>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    playLightFeedback();
-                    onAddUsage?.(app.id, 900);
-                  }}
-                  style={styles.drawerBtn}
-                >
-                  <Text style={styles.drawerBtnText}>+15m</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    onLockApp?.(app.id);
-                  }}
-                  style={[styles.drawerBtn, styles.drawerBtnLock]}
-                >
-                  <Text style={[styles.drawerBtnText, styles.drawerBtnTextLock]}>
-                    Lock Now
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    playLightFeedback();
-                    onResetUsage?.(app.id);
-                  }}
-                  style={styles.drawerBtn}
-                >
-                  <Text style={styles.drawerBtnText}>Reset</Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>REMAINING TODAY</Text>
+              <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(remaining)}</Text>
+            </View>
+            <View style={styles.drawerRow}>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>DAILY ALLOWANCE</Text>
+              <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(app.daily_limit_seconds)}</Text>
+            </View>
+            <View style={styles.drawerRow}>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>NEXT RESET</Text>
+              <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{resetLabel}</Text>
             </View>
           </View>
         )}
@@ -476,9 +578,9 @@ interface AnimatedLimitConfigCardProps {
   app: AppLimitItem;
   index: number;
   formatSeconds: (sec: number) => string;
-  onAddUsage?: (appId: string, seconds: number) => void;
-  onLockApp?: (appId: string) => void;
-  onResetUsage?: (appId: string) => void;
+  resetLabel: string;
+  configWindowOpen: boolean;
+  windowOpenLabel: string;
   onDeleteLimit?: (appId: string, appName: string) => void;
 }
 
@@ -486,9 +588,9 @@ function AnimatedLimitConfigCard({
   app,
   index,
   formatSeconds,
-  onAddUsage,
-  onLockApp,
-  onResetUsage,
+  resetLabel,
+  configWindowOpen,
+  windowOpenLabel,
   onDeleteLimit,
 }: AnimatedLimitConfigCardProps) {
   const styles = useDashboardStyles();
@@ -555,18 +657,21 @@ function AnimatedLimitConfigCard({
           isLocked && styles.limitConfigCardLocked,
         ]}
       >
+        {/* Glass depth: deep wash for locked state + top-edge sheen */}
+        {isLocked && <View pointerEvents="none" style={styles.lockedWash} />}
+        <View pointerEvents="none" style={styles.glassSheen} />
         <View style={styles.limitCardRow}>
           <AppIconImage app={app} size={40} isLocked={isLocked} />
           <View style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
-              <Text style={styles.appName} numberOfLines={1} ellipsizeMode="tail">{app.app_display_name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'nowrap', minWidth: 0, flexShrink: 1 }}>
+              <Text style={[styles.appName, isLocked && styles.appCardTextLocked, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">{app.app_display_name}</Text>
               {app.category ? (
                 <View style={styles.categoryBadgeTiny}>
                   <Text style={styles.categoryBadgeTinyText}>{app.category}</Text>
                 </View>
               ) : null}
             </View>
-            <Text style={styles.appBundleText} numberOfLines={1} ellipsizeMode="tail">{app.app_bundle_id}</Text>
+            <Text style={[styles.appBundleText, isLocked && styles.appBundleTextLocked]} numberOfLines={1} ellipsizeMode="tail">{app.app_bundle_id}</Text>
           </View>
           <View
             style={[
@@ -586,69 +691,52 @@ function AnimatedLimitConfigCard({
           </View>
         </View>
 
+        {/* Details drawer — real allowance data + the one real management action */}
         {isExpanded && (
-          <View style={styles.appCardDrawer}>
-            <View style={styles.drawerDivider} />
+          <View style={[styles.appCardDrawer, isLocked && styles.drawerOnDark]}>
+            <View style={[styles.drawerDivider, isLocked && styles.drawerDividerLocked]} />
             <View style={styles.drawerRow}>
-              <Text style={styles.drawerLabel}>Controls:</Text>
-              <View style={styles.drawerActions}>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    playLightFeedback();
-                    onAddUsage?.(app.id, 900);
-                  }}
-                  style={styles.drawerBtn}
-                >
-                  <Text style={styles.drawerBtnText}>+15m</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    onLockApp?.(app.id);
-                  }}
-                  style={[styles.drawerBtn, styles.drawerBtnLock]}
-                >
-                  <Text style={[styles.drawerBtnText, styles.drawerBtnTextLock]}>
-                    Lock
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    playLightFeedback();
-                    onResetUsage?.(app.id);
-                  }}
-                  style={styles.drawerBtn}
-                >
-                  <Text style={styles.drawerBtnText}>Reset</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    onDeleteLimit?.(app.id, app.app_display_name);
-                  }}
-                  style={[styles.drawerBtn, styles.drawerBtnDelete]}
-                >
-                  <Text style={[styles.drawerBtnText, styles.drawerBtnTextDelete]}>Delete</Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>USED TODAY</Text>
+              <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(used)}</Text>
+            </View>
+            <View style={styles.drawerRow}>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>DAILY ALLOWANCE</Text>
+              <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(app.daily_limit_seconds)}</Text>
+            </View>
+            <View style={styles.drawerRow}>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>NEXT RESET</Text>
+              <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{resetLabel}</Text>
+            </View>
+            <View style={styles.drawerRow}>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>RESTRICTION</Text>
+              {configWindowOpen ? (
+                <View style={styles.drawerActions}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      playLightFeedback();
+                      onDeleteLimit?.(app.id, app.app_display_name);
+                    }}
+                    style={[styles.drawerBtn, styles.drawerBtnDelete]}
+                  >
+                    <Text style={[styles.drawerBtnText, styles.drawerBtnTextDelete]}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <Text style={styles.drawerValueLocked}>until {windowOpenLabel}</Text>
+              )}
             </View>
           </View>
         )}
 
-        <View style={styles.limitCardFooter}>
-          <Text style={styles.lockNotice}>
+        <View style={[styles.limitCardFooter, isLocked && styles.limitCardFooterLocked]}>
+          <Text style={[styles.lockNotice, isLocked && styles.lockNoticeLocked]}>
             {isLocked
-              ? 'Shielding Active • Cannot be bypassed until daily reset'
-              : 'Enforced locally • Tap to test hardware lock notification'}
+              ? `Locked • Unlocks at daily reset ${resetLabel}`
+              : configWindowOpen
+              ? `Window open • Configure until ${resetLabel}`
+              : `Restrictions locked • Editable at ${windowOpenLabel} window`}
           </Text>
         </View>
       </TouchableOpacity>
@@ -669,9 +757,16 @@ export default function DashboardScreen() {
   const [limits, setLimits] = useState<AppLimitItem[]>([]);
   const [resetWindow, setResetWindow] = useState<ResetWindowConfig>({
     reset_time: '08:00:00',
-    timezone: 'UTC',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     window_minutes: 20,
   });
+
+  // Configuration phase (§20 state machine): ACTIVE (locked) vs RESET_WINDOW (editable)
+  const [phase, setPhase] = useState<'ACTIVE' | 'RESET_WINDOW'>('ACTIVE');
+  const [secondsToReset, setSecondsToReset] = useState(0);
+  // Whether a reset_windows row exists in the DB (fresh accounts may have none)
+  const [hasSavedResetWindow, setHasSavedResetWindow] = useState(false);
+  const [hasFetchedWindow, setHasFetchedWindow] = useState(false);
 
   // UI state
   const [isLoading, setIsLoading] = useState(true);
@@ -686,10 +781,17 @@ export default function DashboardScreen() {
   // Add / Configure App Limit Wizard modal state
   const [showAddModal, setShowAddModal] = useState(false);
 
+  // Permission/enforcement status surfaced as the discreet Home indicator.
+  const [permStatus, setPermStatus] = useState<UsageAccessStatus | null>(null);
+  // Bumped whenever new usage arrives so dependent views can reload.
+  const [usageDataVersion, setUsageDataVersion] = useState(0);
+
   const handleAppLimitSuccess = (savedLimit: any) => {
     setLimits((prev) => {
       const filtered = prev.filter((l) => l.app_bundle_id !== savedLimit.app_bundle_id);
-      return [...filtered, { ...savedLimit, used_seconds: 0 }];
+      // Preserve real usage when re-configuring an existing limit during the
+      // window — only new limits start at zero.
+      return [...filtered, { ...savedLimit, used_seconds: savedLimit.used_seconds ?? 0 }];
     });
   };
 
@@ -741,23 +843,8 @@ export default function DashboardScreen() {
         });
       }
 
-      // 2. Fetch App Limits
-      const { data: limitsData } = await supabase
-        .from('app_limits')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .order('created_at', { ascending: true });
-
-      if (limitsData && limitsData.length > 0) {
-        // Use real data without simulation
-        setLimits(limitsData.map((l) => ({ ...l, used_seconds: l.used_seconds || 0 })));
-      } else {
-        // No apps configured yet - show empty state
-        setLimits([]);
-      }
-
-      // 3. Fetch Reset Window
+      // 2. Fetch Reset Window first — needed for timezone + daily-reset boundary math
+      const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const { data: windowData } = await supabase
         .from('reset_windows')
         .select('*')
@@ -766,10 +853,67 @@ export default function DashboardScreen() {
 
       if (windowData) {
         setResetWindow(windowData);
+        setHasSavedResetWindow(true);
+
+        // The device is the source of truth for the user's timezone. Heal legacy rows
+        // that still carry the 'UTC' database default so countdowns, greetings and
+        // reset boundaries all agree on the same wall clock.
+        if (resolveTimezone(windowData.timezone) !== deviceTz) {
+          setResetWindow((prev) => ({ ...prev, timezone: deviceTz }));
+          supabase
+            .from('reset_windows')
+            .upsert({ user_id: user.id, timezone: deviceTz }, { onConflict: 'user_id' })
+            .then(({ error }: { error: any }) => {
+              if (error) console.warn('[Timezone sync]', error.message);
+            });
+        }
       }
+
+      // 3. Fetch App Limits
+      const { data: limitsData } = await supabase
+        .from('app_limits')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true });
+
+      let mappedLimits = (limitsData ?? []).map((l: any) => ({
+        ...l,
+        used_seconds: l.used_seconds || 0,
+      }));
+
+      // Catch-up daily reset: zero out usage recorded before the latest reset
+      // boundary (covers time passed while the app was closed or offline).
+      if (windowData && mappedLimits.length > 0) {
+        const boundary = lastResetMs(Date.now(), windowData.reset_time || '08:00:00', deviceTz);
+        const staleIds = mappedLimits
+          .filter(
+            (l: any) =>
+              (l.used_seconds || 0) > 0 &&
+              l.updated_at &&
+              new Date(l.updated_at).getTime() < boundary
+          )
+          .map((l: any) => l.id);
+
+        if (staleIds.length > 0) {
+          mappedLimits = mappedLimits.map((l: any) =>
+            staleIds.includes(l.id) ? { ...l, used_seconds: 0 } : l
+          );
+          supabase
+            .from('app_limits')
+            .update({ used_seconds: 0, updated_at: new Date().toISOString() })
+            .in('id', staleIds)
+            .then(({ error }: { error: any }) => {
+              if (error) console.warn('[Daily reset catch-up]', error.message);
+            });
+        }
+      }
+
+      setLimits(mappedLimits);
     } catch (err: any) {
       console.warn('[Dashboard Data Fetch Error]:', err);
     } finally {
+      setHasFetchedWindow(true);
       setIsLoading(false);
       setIsRefreshing(false);
     }
@@ -826,29 +970,60 @@ export default function DashboardScreen() {
   }, [fetchUserData, router]);
 
   // -----------------------------------------------------------------------
-  // 2. COUNTDOWN TIMER TO DAILY RESET
+  // 2. DAILY RESET ENGINE + TIMEZONE-AWARE COUNTDOWN
   // -----------------------------------------------------------------------
+
+  const nextResetRef = useRef<number | null>(null);
+
+  /** Runs the real daily reset: zeroes usage, persists it, notifies the user. */
+  const performDailyReset = useCallback(async () => {
+    const resetLabel = formatClock(resetWindow.reset_time);
+
+    // Optimistic local reset — the realtime channel syncs other tabs/devices.
+    setLimits((prev) => prev.map((l) => (l.used_seconds ? { ...l, used_seconds: 0 } : l)));
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const { error } = await supabase
+        .from('app_limits')
+        .update({ used_seconds: 0, updated_at: new Date().toISOString() })
+        .eq('user_id', sessionData.session.user.id)
+        .eq('is_active', true)
+        .gt('used_seconds', 0);
+
+      if (error) console.warn('[Daily reset sync]', error.message);
+    } catch (err) {
+      console.warn('[Daily reset sync error]', err);
+    }
+
+    notifyDailyReset(resetLabel);
+  }, [resetWindow.reset_time]);
+
   useEffect(() => {
+    const timeZone = resolveTimezone(resetWindow.timezone);
+    const resetTime = resetWindow.reset_time || '08:00:00';
+    const windowMs = Math.max(1, resetWindow.window_minutes || 20) * 60 * 1000;
+
     const updateCountdown = () => {
-      const now = new Date();
-      const [resetHour, resetMinute] = (resetWindow.reset_time || '08:00:00')
-        .split(':')
-        .map(Number);
+      const nowMs = Date.now();
+      const targetMs = nextResetMs(nowMs, resetTime, timeZone);
 
-      const target = new Date();
-      target.setHours(resetHour, resetMinute, 0, 0);
-
-      // If reset time passed today, target tomorrow's reset
-      if (now.getTime() >= target.getTime()) {
-        target.setDate(target.getDate() + 1);
+      // When the previous target is behind us, the boundary just passed → real reset.
+      const prevTarget = nextResetRef.current;
+      if (prevTarget !== null && nowMs >= prevTarget) {
+        performDailyReset();
       }
+      nextResetRef.current = targetMs;
 
-      const diffMs = target.getTime() - now.getTime();
-      const diffSec = Math.floor(diffMs / 1000);
+      const diffSec = Math.max(0, Math.floor((targetMs - nowMs) / 1000));
       const hours = Math.floor(diffSec / 3600);
       const minutes = Math.floor((diffSec % 3600) / 60);
       const seconds = diffSec % 60;
 
+      setSecondsToReset(diffSec);
+      setPhase(diffSec * 1000 <= windowMs ? 'RESET_WINDOW' : 'ACTIVE');
       setCountdownText(
         `${hours}h ${minutes < 10 ? '0' : ''}${minutes}m ${seconds < 10 ? '0' : ''}${seconds}s`
       );
@@ -857,7 +1032,7 @@ export default function DashboardScreen() {
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [resetWindow]);
+  }, [resetWindow.reset_time, resetWindow.timezone, resetWindow.window_minutes, performDailyReset]);
 
   // Request notification permissions when dashboard mounts
   useEffect(() => {
@@ -865,100 +1040,230 @@ export default function DashboardScreen() {
   }, []);
 
   // -----------------------------------------------------------------------
-  // 3. HARDWARE ENFORCEMENT & NOTIFICATION SIMULATION
+  // REAL USAGE ENGINE (Android): native monitoring + real usage display.
+  // app_limits rows are mirrored into the native engine; today's usage comes
+  // from Android UsageStatsManager and stays LOCAL (never uploaded).
   // -----------------------------------------------------------------------
+  const limitsRef = useRef<AppLimitItem[]>([]);
+  useEffect(() => {
+    limitsRef.current = limits;
+  }, [limits]);
 
-  const handleLockApp = (appId: string) => {
-    setLimits((prev) =>
-      prev.map((a) => {
-        if (a.id === appId) {
-          const lockedApp = { ...a, used_seconds: a.daily_limit_seconds };
-          notifyAppLocked(
-            a.app_display_name,
-            formatSeconds(a.daily_limit_seconds),
-            resetWindow.reset_time?.slice(0, 5) || '08:00 AM'
-          );
-          return lockedApp;
-        }
-        return a;
-      })
-    );
-  };
-
-  const handleAddUsage = async (appId: string, secondsToAdd: number = 900) => {
-    // Optimistic local update first
-    let finalUsed = 0;
-
-    setLimits((prev) =>
-      prev.map((a) => {
-        if (a.id === appId) {
-          const prevUsed = a.used_seconds || 0;
-          const newUsed = Math.min(a.daily_limit_seconds, prevUsed + secondsToAdd);
-          const remaining = a.daily_limit_seconds - newUsed;
-          finalUsed = newUsed;
-
-          if (remaining <= 0) {
-            notifyAppLocked(
-              a.app_display_name,
-              formatSeconds(a.daily_limit_seconds),
-              resetWindow.reset_time?.slice(0, 5) || '08:00'
-            );
-          } else if (remaining <= 600 && prevUsed < a.daily_limit_seconds - 600) {
-            notifyAppWarning(a.app_display_name, formatSeconds(remaining));
-          } else {
-            playLightFeedback();
-          }
-
-          return { ...a, used_seconds: newUsed };
-        }
-        return a;
-      })
-    );
-
-    // Persist to Supabase
+  const refreshRealUsage = useCallback(async () => {
+    if (Platform.OS !== 'android') return;
+    const current = limitsRef.current;
+    if (current.length === 0) return;
     try {
-      const { error } = await supabase
-        .from('app_limits')
-        .update({ used_seconds: finalUsed, updated_at: new Date().toISOString() })
-        .eq('id', appId);
-
-      if (error) {
-        console.warn('[Usage sync]', error.message);
-      }
+      const usageMap = await usageEngine.getTodayUsageMap(
+        current.map((l) => l.app_bundle_id)
+      );
+      setLimits((prev) => {
+        let changed = false;
+        const next = prev.map((l) => {
+          const ms = usageMap[l.app_bundle_id];
+          if (typeof ms !== 'number') return l;
+          const seconds = Math.round(ms / 1000);
+          if (seconds === l.used_seconds) return l;
+          changed = true;
+          return { ...l, used_seconds: seconds };
+        });
+        return changed ? next : prev; // same ref → no re-render → no effect loop
+      });
     } catch (err) {
-      console.warn('[Usage sync error]', err);
+      console.warn('[FocusLock][Usage] Usage refresh failed:', err);
     }
-  };
+  }, []);
 
-  const handleResetAppUsage = async (appId: string) => {
-    playSuccessFeedback();
-    // Optimistic
-    setLimits((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, used_seconds: 0 } : a))
-    );
-    showToast('App allowance reset.', 'info');
+  // -------------------------------------------------------------------------
+  // ANALYTICS (real data only): range-scoped aggregates straight from the
+  // native reconstruction path. App display names resolved from the real
+  // installed-app snapshot (never hardcoded sample data).
+  // -------------------------------------------------------------------------
+  const [analyticsRange, setAnalyticsRange] = useState<'today' | '7' | '30'>('7');
+  const [analyticsData, setAnalyticsData] = useState<{
+    totalMs: number;
+    prevTotalMs: number;
+    daily: { dayStartMs: number; dayEndMs: number; usageMs: number }[];
+    perApp: { packageName: string; usageMs: number; label: string }[];
+    hourly: number[];
+  } | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(false);
+  // Theme-aware chart series (recomputed per theme → both modes styled).
+  const analyticsChartColors = [
+    colors.chart1,
+    colors.chart2,
+    colors.chart3,
+    colors.chart4,
+    colors.chart5,
+    colors.chart6,
+  ];
 
-    // Persist to Supabase
+  const loadAnalytics = useCallback(async () => {
+    if (!isUsageEngineAvailable() || !usageBridge.hasAnalyticsSupport()) return;
+    setAnalyticsLoading(true);
+    setAnalyticsError(false);
     try {
-      const { error } = await supabase
-        .from('app_limits')
-        .update({ used_seconds: 0, updated_at: new Date().toISOString() })
-        .eq('id', appId);
+      const now = Date.now();
+      const midnight = new Date();
+      midnight.setHours(0, 0, 0, 0);
+      const dayStart = midnight.getTime();
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const days = analyticsRange === 'today' ? 1 : analyticsRange === '7' ? 7 : 30;
+      const start = analyticsRange === 'today' ? dayStart : dayStart - (days - 1) * DAY_MS;
+      const prevStart = start - days * DAY_MS;
 
-      if (error) {
-        console.warn('[Reset usage sync]', error.message);
+      const [totalMs, prevTotalMs, daily, perAppRaw, hourly] = await Promise.all([
+        usageBridge.getTotalUsageForRange(start, now + 1),
+        // Previous equal-length period — only for day-based ranges.
+        days > 1 ? usageBridge.getTotalUsageForRange(prevStart, start) : Promise.resolve(0),
+        usageBridge.getDailyUsageHistory(days),
+        usageBridge.getPerAppUsageForRange(start, now + 1, 12),
+        usageBridge.getHourlyUsageForRange(start, now + 1),
+      ]);
+
+      // FocusLock measures every foreground moment — listing itself as "most
+      // used" would be noise, not insight.
+      const rows = perAppRaw
+        .filter((row) => row.packageName !== SELF_PACKAGE)
+        .slice(0, 8);
+
+      // Real display labels via PackageManager (covers system apps the
+      // selectable-apps list omits); restricted-app name is the fallback,
+      // package id last — never fabricated.
+      let labelMap = new Map<string, string>();
+      try {
+        labelMap = await getAppDisplayNames(rows.map((r) => r.packageName));
+      } catch {
+        /* labels unavailable — restricted names / package ids used below */
       }
+      const restrictedNames = new Map<string, string>(
+        limitsRef.current.map((l) => [l.app_bundle_id, l.app_display_name])
+      );
+
+      const perApp = rows.map((row) => ({
+        ...row,
+        label:
+          labelMap.get(row.packageName) ??
+          restrictedNames.get(row.packageName) ??
+          row.packageName,
+      }));
+
+      setAnalyticsData({ totalMs, prevTotalMs, daily, perApp, hourly });
     } catch (err) {
-      console.warn('[Reset usage sync error]', err);
+      console.warn('[FocusLock][Usage] Analytics load failed:', err);
+      setAnalyticsData(null);
+      setAnalyticsError(true);
+    } finally {
+      setAnalyticsLoading(false);
     }
-  };
+  }, [analyticsRange]);
+
+  // Reload when the tab opens, the range changes, or fresh usage arrives.
+  useEffect(() => {
+    if (activeTab === 'analytics') loadAnalytics();
+  }, [activeTab, loadAnalytics, usageDataVersion]);
+
+  // Mirror app_limits into the native engine, then pull real usage.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    usageEngine.configure(limits).then(() => refreshRealUsage());
+  }, [limits, refreshRealUsage]);
+
+  // Native engine events → notifications + live usage refresh.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const unsubscribe = usageEngine.subscribe((event) => {
+      if (event.type === 'onUsageUpdated') {
+        refreshRealUsage();
+      } else if (event.type === 'onLimitWarning') {
+        const { appName, remainingMs } = event.payload;
+        notifyLimitWarning({
+          appName: appName || 'An app',
+          remainingMinutes: Math.max(1, Math.round((remainingMs ?? 0) / 60000)),
+        });
+      } else if (event.type === 'onLimitReached') {
+        const { appName, dailyLimitMs, resetAt } = event.payload;
+        notifyAppLocked({
+          appName: appName || 'An app',
+          limitFormatted: formatHMS(Math.round((dailyLimitMs ?? 0) / 1000)),
+          resetTime: resetAt
+            ? new Date(resetAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            : undefined,
+        });
+        refreshRealUsage();
+        setUsageDataVersion((v) => v + 1);
+      }
+    });
+    return unsubscribe;
+  }, [refreshRealUsage]);
+
+  // Re-sync all dashboard data whenever the app returns to the foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        fetchUserData();
+        refreshRealUsage();
+        // Bump so the Analytics tab (if open) reloads with fresh numbers.
+        setUsageDataVersion((v) => v + 1);
+        // Lock triggers recorded while we were backgrounded → surface now.
+        usageEngine
+          .consumeLockTrigger()
+          .then((trigger) => {
+            if (trigger) {
+              showToast(`${trigger.appName} is locked — daily limit reached.`, 'error');
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    return () => subscription.remove();
+  }, [fetchUserData, refreshRealUsage]);
 
   // -----------------------------------------------------------------------
-  // REALTIME SYNCHRONIZATION: App Limits & Reset Windows
+  // SINGLE-DEVICE SESSIONS: if the account moved to another device, this
+  // install signs itself out on its next check (mount + foreground, ≤1/min).
+  // Offline / backend-down results are NEVER treated as supersession.
+  // -----------------------------------------------------------------------
+  const lastSessionCheckRef = useRef(0);
+  useEffect(() => {
+    const checkHoldsSession = async () => {
+      const now = Date.now();
+      if (now - lastSessionCheckRef.current < 60_000) return;
+      lastSessionCheckRef.current = now;
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+        const active = await checkDeviceSessionStillActive(token);
+        if (active === false) {
+          await supabase.auth.signOut();
+          showToast('Signed out — your account is now in use on another device.', 'info');
+          router.replace('/(auth)/login');
+        }
+      } catch {
+        /* network failure → keep the session; retried on next foreground */
+      }
+    };
+    checkHoldsSession();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkHoldsSession();
+    });
+    return () => subscription.remove();
+  }, [router, showToast]);
+
+  // -----------------------------------------------------------------------
+  // REALTIME SYNCHRONIZATION: App Limits, Reset Windows & Profile
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!profile?.id) return;
 
+    // Refetch whenever the main channel re-subscribes — covers dropped
+    // connections so data is never silently stale.
+    let hasSubscribedOnce = false;
+
+    // Single consolidated channel for all app_limit changes (INSERT/UPDATE/DELETE),
+    // including live used_seconds updates from other devices or the backend.
     const limitsChannel = supabase
       .channel(`realtime-limits-${profile.id}`)
       .on(
@@ -979,33 +1284,60 @@ export default function DashboardScreen() {
                 );
                 if (exists) {
                   return prev.map((l) =>
-                    l.app_bundle_id === item.app_bundle_id ? { ...l, ...item } : l
+                    l.app_bundle_id === item.app_bundle_id
+                      ? {
+                          ...l,
+                          ...item,
+                          used_seconds:
+                            typeof item.used_seconds === 'number'
+                              ? item.used_seconds
+                              : l.used_seconds || 0,
+                        }
+                      : l
                   );
                 }
-                return [...prev, { ...item, used_seconds: 0 }];
+                return [...prev, { ...item, used_seconds: item.used_seconds || 0 }];
               });
             }
           } else if (payload.eventType === 'UPDATE') {
             const item = payload.new as AppLimitItem;
             setLimits((prev) => {
               if (!item.is_active) {
-                return prev.filter((l) => l.app_bundle_id !== item.app_bundle_id);
+                return prev.filter(
+                  (l) => l.id !== item.id && l.app_bundle_id !== item.app_bundle_id
+                );
               }
               return prev.map((l) =>
-                l.app_bundle_id === item.app_bundle_id
-                  ? { ...l, ...item, used_seconds: l.used_seconds || 0 }
+                l.id === item.id || l.app_bundle_id === item.app_bundle_id
+                  ? {
+                      ...l,
+                      ...item,
+                      used_seconds:
+                        typeof item.used_seconds === 'number'
+                          ? item.used_seconds
+                          : l.used_seconds || 0,
+                    }
                   : l
               );
             });
           } else if (payload.eventType === 'DELETE') {
-            const oldItem = payload.old as { id: string };
-            if (oldItem?.id) {
-              setLimits((prev) => prev.filter((l) => l.id !== oldItem.id));
-            }
+            const oldItem = payload.old as { id?: string; app_bundle_id?: string };
+            setLimits((prev) =>
+              prev.filter(
+                (l) =>
+                  !(oldItem?.id && l.id === oldItem.id) &&
+                  !(oldItem?.app_bundle_id && l.app_bundle_id === oldItem.app_bundle_id)
+              )
+            );
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (hasSubscribedOnce) fetchUserData();
+          hasSubscribedOnce = true;
+        }
+      });
 
     const windowChannel = supabase
       .channel(`realtime-reset-window-${profile.id}`)
@@ -1018,35 +1350,36 @@ export default function DashboardScreen() {
           filter: `user_id=eq.${profile.id}`,
         },
         (payload) => {
-          if (payload.new) {
-            setResetWindow(payload.new as ResetWindowConfig);
+          if (payload.eventType === 'DELETE') {
+            setResetWindow({
+              reset_time: '08:00:00',
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              window_minutes: 20,
+            });
+            return;
+          }
+          const next = payload.new as ResetWindowConfig;
+          if (next && (next.reset_time || next.timezone)) {
+            setResetWindow(next);
           }
         }
       )
       .subscribe();
 
-    // Realtime subscription: used_seconds updates from other devices/backend
-    const usageChannel = supabase
-      .channel(`realtime-usage-${profile.id}`)
+    // Live profile updates (avatar, display name, username)
+    const profileChannel = supabase
+      .channel(`realtime-profile-${profile.id}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'app_limits',
-          filter: `user_id=eq.${profile.id}`,
+          table: 'profiles',
+          filter: `id=eq.${profile.id}`,
         },
         (payload) => {
-          const updated = payload.new as AppLimitItem;
-          if (typeof updated.used_seconds === 'number') {
-            setLimits((prev) =>
-              prev.map((l) =>
-                l.id === updated.id
-                  ? { ...l, used_seconds: updated.used_seconds }
-                  : l
-              )
-            );
-          }
+          const updated = payload.new as UserProfile;
+          setProfile((prev) => (prev ? { ...prev, ...updated } : prev));
         }
       )
       .subscribe();
@@ -1054,9 +1387,9 @@ export default function DashboardScreen() {
     return () => {
       supabase.removeChannel(limitsChannel);
       supabase.removeChannel(windowChannel);
-      supabase.removeChannel(usageChannel);
+      supabase.removeChannel(profileChannel);
     };
-  }, [profile?.id]);
+  }, [profile?.id, fetchUserData]);
 
   // Dynamic calculation of timeline based on user's real reset window
   const timelineSchedule = useMemo(() => {
@@ -1122,29 +1455,6 @@ export default function DashboardScreen() {
         },
       ]
     );
-  };
-
-  const handleTestLockNotification = (targetApp?: AppLimitItem) => {
-    const target = targetApp || limits[0];
-    if (!target) {
-      showToast('No restricted apps configured yet. Tap + Select Application below to add one.', 'info');
-      return;
-    }
-    handleLockApp(target.id);
-  };
-
-  const handleTestWarningNotification = (targetApp?: AppLimitItem) => {
-    const target = targetApp || limits[0];
-    if (!target) {
-      showToast('No restricted apps configured yet. Tap + Select Application below to add one.', 'info');
-      return;
-    }
-    notifyAppWarning(target.app_display_name, '5m 00s');
-  };
-
-  const handleTestResetNotification = () => {
-    setLimits((prev) => prev.map((l) => ({ ...l, used_seconds: 0 })));
-    notifyDailyReset(resetWindow.reset_time?.slice(0, 5) || '08:00 AM');
   };
 
   const handlePickAndUploadAvatar = async () => {
@@ -1251,10 +1561,107 @@ export default function DashboardScreen() {
     return `${mins}m`;
   };
 
-  // Total daily usage across all apps
+  // Total daily usage across all apps (Daily Allowance timer)
   const totalLimitSec = limits.reduce((acc, l) => acc + l.daily_limit_seconds, 0);
   const totalUsedSec = limits.reduce((acc, l) => acc + (l.used_seconds || 0), 0);
   const totalProgress = totalLimitSec > 0 ? Math.min(1, totalUsedSec / totalLimitSec) : 0;
+
+  // Display helpers — single source of truth for time/timezone formatting
+  const activeTimezone = resolveTimezone(resetWindow.timezone);
+  const resetLabel = formatClock(resetWindow.reset_time);
+  const zonedHour = zonedParts(new Date(), activeTimezone).hour;
+
+  // Configuration-window helpers (§20 / §3.4)
+  const windowMinutes = resetWindow.window_minutes || 20;
+  const windowOpenLabel = useMemo(() => {
+    const [h, m] = (resetWindow.reset_time || '08:00:00').split(':').map(Number);
+    const totalMin = (((h || 0) % 24) * 60 + ((m || 0) % 60) - windowMinutes + 1440) % 1440;
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    return formatClock(`${hh < 10 ? '0' : ''}${hh}:${mm < 10 ? '0' : ''}${mm}:00`);
+  }, [resetWindow.reset_time, windowMinutes]);
+  const secondsUntilWindow = Math.max(0, secondsToReset - windowMinutes * 60);
+  // Editing allowed during the pre-reset window, or one-time setup when no schedule exists yet
+  const canEditSchedule =
+    phase === 'RESET_WINDOW' || (hasFetchedWindow && !hasSavedResetWindow);
+
+  // -----------------------------------------------------------------------
+  // SCHEDULE EDITOR — draft state for the general daily reset
+  // -----------------------------------------------------------------------
+  const [draftHour, setDraftHour] = useState(8);
+  const [draftMinuteIndex, setDraftMinuteIndex] = useState(0); // 0..11 → 0,5,…,55
+  const [draftWindowMinutes, setDraftWindowMinutes] = useState(20);
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+
+  // Sync the editor draft with the authoritative reset window (incl. realtime
+  // updates). Guarded render-phase adjustment — avoids a cascading effect render.
+  const scheduleSyncKey = `${resetWindow.reset_time}|${resetWindow.window_minutes}`;
+  const [prevScheduleSyncKey, setPrevScheduleSyncKey] = useState<string | null>(null);
+  if (prevScheduleSyncKey !== scheduleSyncKey) {
+    setPrevScheduleSyncKey(scheduleSyncKey);
+    const [h, m] = (resetWindow.reset_time || '08:00:00').split(':').map(Number);
+    const hour24 = (((h || 0) % 24) + 24) % 24;
+    const minute = (((m || 0) % 60) + 60) % 60;
+    setDraftHour(hour24);
+    setDraftMinuteIndex(Math.round(minute / 5) % 12);
+    setDraftWindowMinutes(resetWindow.window_minutes || 20);
+  }
+
+  const draftMinute = draftMinuteIndex * 5;
+  const displayHour = draftHour % 12 === 0 ? 12 : draftHour % 12;
+  const isPM = draftHour >= 12;
+  const draftPreview = formatClock(
+    `${draftHour < 10 ? `0${draftHour}` : draftHour}:${draftMinute < 10 ? `0${draftMinute}` : draftMinute}:00`
+  );
+  const isScheduleDirty =
+    draftHour !== parseInt((resetWindow.reset_time || '08:00:00').slice(0, 2), 10) % 24 ||
+    draftMinute !== parseInt((resetWindow.reset_time || '08:00:00').slice(3, 5), 10) ||
+    draftWindowMinutes !== (resetWindow.window_minutes || 20);
+
+  const saveSchedule = async () => {
+    if (!canEditSchedule || !isScheduleDirty || isSavingSchedule) return;
+    setIsSavingSchedule(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        showToast('Session expired. Please sign in again.', 'error');
+        return;
+      }
+
+      const hh = draftHour < 10 ? `0${draftHour}` : `${draftHour}`;
+      const mm = draftMinute < 10 ? `0${draftMinute}` : `${draftMinute}`;
+      const resetTime = `${hh}:${mm}:00`;
+
+      const { error } = await supabase.from('reset_windows').upsert(
+        {
+          user_id: sessionData.session.user.id,
+          reset_time: resetTime,
+          timezone: activeTimezone,
+          window_minutes: draftWindowMinutes,
+          is_active: true,
+        },
+        { onConflict: 'user_id' }
+      );
+
+      if (error) {
+        showToast(error.message, 'error');
+        return;
+      }
+
+      // Optimistic update — the realtime channel confirms on every device
+      setResetWindow({
+        reset_time: resetTime,
+        timezone: activeTimezone,
+        window_minutes: draftWindowMinutes,
+      });
+      setHasSavedResetWindow(true);
+      showToast('Daily reset schedule updated.', 'success');
+    } catch {
+      showToast('Failed to save schedule. Please try again.', 'error');
+    } finally {
+      setIsSavingSchedule(false);
+    }
+  };
 
   return (
     <View style={styles.screenContainer}>
@@ -1287,44 +1694,96 @@ export default function DashboardScreen() {
               onRefresh={() => {
                 setIsRefreshing(true);
                 fetchUserData();
+                setUsageDataVersion((v) => v + 1);
               }}
               tintColor={colors.accent}
             />
           }
         >
           {/* ------------------------------------------------------------- */}
-          {/* TAB 1: HOME (Dashboard) */}
-          {/* ------------------------------------------------------------- */}
-          {/* ------------------------------------------------------------- */}
-          {/* TAB 1: HOME (Dashboard) */}
+          {/* TAB 1: HOME (Command Center)                                  */}
           {/* ------------------------------------------------------------- */}
           {activeTab === 'home' && (
             <AnimatedTabContent key="home">
               <View style={styles.tabContent}>
 
+                {/* Enforcement status — visible only while action is needed */}
+                <UsageAccessBanner hideWhenReady onStatusChange={setPermStatus} />
+
                 {/* Greeting */}
                 <StaggerItem index={0} totalDelay={70}>
-                  <View style={styles.greetingBlock}>
+                  <View style={styles.greetingRow}>
+                    <View style={styles.greetingBlock}>
                     <Text style={styles.greetingEyebrow}>
-                      {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'} 👋
+                      {zonedHour < 12 ? 'Good morning' : zonedHour < 17 ? 'Good afternoon' : 'Good evening'} 👋
                     </Text>
                     <Text style={styles.greetingTitle}>
                       {profile?.display_name || (profile?.username ? profile.username : 'Welcome')}
                     </Text>
+                    </View>
+
+                    {/* Discreet enforcement indicator (real permission state) */}
+                    {permStatus?.available && (
+                      <View
+                        style={[
+                          styles.statusPill,
+                          permStatus.canEnforce ? styles.statusPillOk : styles.statusPillWarn,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.statusDot,
+                            permStatus.canEnforce ? styles.statusDotOk : styles.statusDotWarn,
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.statusPillText,
+                            permStatus.canEnforce
+                              ? styles.statusPillTextOk
+                              : styles.statusPillTextWarn,
+                          ]}
+                        >
+                          {permStatus.canEnforce ? 'Enforced' : 'Setup needed'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </StaggerItem>
 
-                {/* Hero card */}
+                {/* Hero card — Daily Allowance countdown (original timer) */}
                 <StaggerItem index={1} totalDelay={70}>
                   <View style={styles.heroCard}>
                     <View style={styles.heroHeader}>
                       <Text style={styles.heroHeaderTitle}>Daily Allowance</Text>
-                      <Text style={styles.resetLabel}>Daily Reset in</Text>
+                      <View
+                        style={[
+                          styles.phasePill,
+                          phase === 'RESET_WINDOW' && styles.phasePillWindow,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.phaseDot,
+                            phase === 'RESET_WINDOW' && styles.phaseDotWindow,
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.phasePillText,
+                            phase === 'RESET_WINDOW' && styles.phasePillTextWindow,
+                          ]}
+                        >
+                          {phase === 'RESET_WINDOW' ? 'WINDOW OPEN' : 'ACTIVE'}
+                        </Text>
+                      </View>
                     </View>
 
                     <Text style={styles.timerDisplay}>{countdownText || 'Calculating...'}</Text>
                     <Text style={styles.timerSub}>
-                      Next reset at {resetWindow.reset_time?.slice(0, 5)} {resetWindow.timezone}
+                      {phase === 'RESET_WINDOW'
+                        ? `Reset window open until ${resetLabel}`
+                        : `Next reset at ${resetLabel} · ${timezoneLabel(activeTimezone)}`}
                     </Text>
 
                     {/* Animated Progress bar */}
@@ -1342,23 +1801,45 @@ export default function DashboardScreen() {
                   </View>
                 </StaggerItem>
 
+                {/* Configuration-window banner (§3.4) */}
+                {phase === 'RESET_WINDOW' && (
+                  <View style={styles.windowBanner}>
+                    <Text style={styles.windowBannerTitle}>⚡ Configuration window open</Text>
+                    <Text style={styles.windowBannerSub}>
+                      Set the next day of limits now — editing locks again at {resetLabel}.
+                    </Text>
+                  </View>
+                )}
+
                 <StaggerItem index={2} totalDelay={70}>
                   <View style={styles.sectionHeaderRow}>
                     <View>
                       <Text style={styles.sectionHeading}>Restricted Apps</Text>
                       <Text style={styles.sectionSubtext}>
-                        Tap any app to simulate usage & test notifications
+                        Real usage · live lock states
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        playLightFeedback();
-                        setActiveTab('limits');
-                      }}
-                    >
-                      <Text style={styles.sectionLink}>Manage all ({limits.length})</Text>
-                    </TouchableOpacity>
+                    <View style={styles.sectionActions}>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          playLightFeedback();
+                          setShowAddModal(true);
+                        }}
+                        style={styles.sectionAddBtn}
+                      >
+                        <Text style={styles.sectionAddBtnText}>+ Add</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          playLightFeedback();
+                          setActiveTab('limits');
+                        }}
+                      >
+                        <Text style={styles.sectionLink}>Manage ({limits.length})</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </StaggerItem>
 
@@ -1390,9 +1871,7 @@ export default function DashboardScreen() {
                         app={app}
                         index={idx}
                         formatSeconds={formatSeconds}
-                        onAddUsage={handleAddUsage}
-                        onLockApp={handleLockApp}
-                        onResetUsage={handleResetAppUsage}
+                        resetLabel={resetLabel}
                       />
                     ))
                   )}
@@ -1402,7 +1881,7 @@ export default function DashboardScreen() {
                 <View style={styles.quoteCard}>
                   <Text style={styles.quoteTitle}>Anti-Impulse Rule</Text>
                   <Text style={styles.quoteText}>
-                    "Decide your screen time before distraction takes over. Active limits cannot be extended once set."
+                    &quot;Decide your screen time before distraction takes over. Active limits cannot be extended once set.&quot;
                   </Text>
                 </View>
               </View>
@@ -1418,45 +1897,29 @@ export default function DashboardScreen() {
                 <View style={styles.tabHeader}>
                   <Text style={styles.tabHeading}>App Limits</Text>
                   <Text style={styles.tabSubheading}>
-                    Configure per-app daily allowances enforced by FocusLock hardware rules.
+                    Configure per-app daily allowances. Usage and status sync live across your devices.
                   </Text>
                 </View>
 
-                {/* HARDWARE SIMULATION & NOTIFICATION TEST BANNER */}
-                <View style={styles.testNotificationCard}>
-                  <View style={styles.testHeaderRow}>
-                    <View style={styles.testIconPill}>
-                      <Text style={styles.testIconPillText}>TEST NOTIFICATIONS & RESTRICTIONS</Text>
-                    </View>
+                {/* Configuration-window banner (§3.4) */}
+                {phase === 'RESET_WINDOW' ? (
+                  <View style={styles.windowBanner}>
+                    <Text style={styles.windowBannerTitle}>⚡ Configuration window open</Text>
+                    <Text style={styles.windowBannerSub}>
+                      Restrictions can be removed or changed until {resetLabel}.
+                    </Text>
                   </View>
-                  <Text style={styles.testCardTitle}>Hardware Enforcement Simulation</Text>
-                  <Text style={styles.testCardSub}>
-                    Trigger push and in-app alerts with the FocusLock logo and audio chime to test alerts:
-                  </Text>
-                  <View style={styles.testButtonsRow}>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleTestLockNotification()}
-                      style={[styles.testBtn, styles.testBtnLock]}
-                    >
-                      <Text style={styles.testBtnText}>Lock App Alert</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleTestWarningNotification()}
-                      style={[styles.testBtn, styles.testBtnWarning]}
-                    >
-                      <Text style={styles.testBtnText}>5m Warning</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => handleTestResetNotification()}
-                      style={[styles.testBtn, styles.testBtnReset]}
-                    >
-                      <Text style={styles.testBtnText}>Daily Reset</Text>
-                    </TouchableOpacity>
+                ) : (
+                  <View style={styles.windowBannerLocked}>
+                    <Text style={styles.windowBannerLockedTitle}>
+                      Restrictions locked until {windowOpenLabel}
+                    </Text>
+                    <Text style={styles.windowBannerLockedSub}>
+                      Removals and limit changes are only permitted during the pre-reset window —
+                      discipline, not willpower.
+                    </Text>
                   </View>
-                </View>
+                )}
 
                 {/* Add New App Button */}
                 <TouchableOpacity
@@ -1498,9 +1961,9 @@ export default function DashboardScreen() {
                         app={app}
                         index={idx}
                         formatSeconds={formatSeconds}
-                        onAddUsage={handleAddUsage}
-                        onLockApp={handleLockApp}
-                        onResetUsage={handleResetAppUsage}
+                        resetLabel={resetLabel}
+                        configWindowOpen={phase === 'RESET_WINDOW'}
+                        windowOpenLabel={windowOpenLabel}
                         onDeleteLimit={handleDeleteLimit}
                       />
                     ))
@@ -1511,25 +1974,261 @@ export default function DashboardScreen() {
           )}
 
           {/* ------------------------------------------------------------- */}
-          {/* TAB 3: SCHEDULE (Daily Reset Window) */}
+          {/* RESET SCHEDULE (integrated into the Limits flow)              */}
           {/* ------------------------------------------------------------- */}
-          {activeTab === 'schedule' && (
+          {activeTab === 'limits' && (
             <AnimatedTabContent key="schedule">
               <View style={styles.tabContent}>
                 <View style={styles.tabHeader}>
                   <Text style={styles.tabHeading}>Reset Schedule</Text>
                   <Text style={styles.tabSubheading}>
-                    Your daily reset occurs at the scheduled time. A 20-minute pre-reset window lets
-                    you set tomorrow's limits.
+                    One general daily reset refreshes allowances for every app. Editing is only
+                    permitted during the pre-reset window — decide before distraction takes over.
                   </Text>
+                </View>
+
+                {/* Phase status card (§20 state machine) */}
+                <View
+                  style={[
+                    styles.phaseCard,
+                    phase === 'RESET_WINDOW' && styles.phaseCardWindow,
+                  ]}
+                >
+                  <View style={styles.phaseCardHeader}>
+                    <View
+                      style={[
+                        styles.phaseDot,
+                        phase === 'RESET_WINDOW' && styles.phaseDotWindow,
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.phaseCardTitle,
+                        phase === 'RESET_WINDOW' && styles.phaseCardTitleWindow,
+                      ]}
+                    >
+                      {phase === 'RESET_WINDOW'
+                        ? 'CONFIGURATION WINDOW OPEN'
+                        : 'LIMITS ACTIVE & LOCKED'}
+                    </Text>
+                  </View>
+                  <Text style={styles.phaseCardCountdown}>{countdownText || 'Calculating...'}</Text>
+                  <Text style={styles.phaseCardSub}>
+                    {phase === 'RESET_WINDOW'
+                      ? `Set tomorrow's limits before ${resetLabel} — the window closes at reset.`
+                      : `Editing unlocks when the ${windowMinutes}-minute window opens at ${windowOpenLabel}.`}
+                  </Text>
+                </View>
+
+                {/* Daily reset time editor */}
+                <View style={styles.scheduleEditorCard}>
+                  <View style={styles.editorHeaderRow}>
+                    <Text style={styles.editorTitle}>Daily Reset Time</Text>
+                    {!canEditSchedule && (
+                      <Text style={styles.editorLockText}>🔒 {formatHMS(secondsUntilWindow)}</Text>
+                    )}
+                  </View>
+
+                  {/* Live preview */}
+                  <View style={styles.editorPreviewBox}>
+                    <Text style={styles.editorPreview}>{draftPreview}</Text>
+                    <Text style={styles.editorPreviewSub}>
+                      {activeTimezone} ({timezoneLabel(activeTimezone)})
+                    </Text>
+                  </View>
+
+                  {/* Hour / Minute / Meridiem steppers */}
+                  <View style={styles.segmentRow}>
+                    <View style={styles.stepperCol}>
+                      <Text style={styles.stepperLabel}>HOUR</Text>
+                      <View style={styles.stepperControls}>
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          disabled={!canEditSchedule}
+                          onPress={() => {
+                            playLightFeedback();
+                            setDraftHour((prev) => (prev + 23) % 24);
+                          }}
+                          style={[styles.stepperBtn, !canEditSchedule && styles.stepperBtnDisabled]}
+                        >
+                          <Text style={styles.stepperBtnText}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.stepperValue}>{displayHour}</Text>
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          disabled={!canEditSchedule}
+                          onPress={() => {
+                            playLightFeedback();
+                            setDraftHour((prev) => (prev + 1) % 24);
+                          }}
+                          style={[styles.stepperBtn, !canEditSchedule && styles.stepperBtnDisabled]}
+                        >
+                          <Text style={styles.stepperBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <View style={styles.stepperCol}>
+                      <Text style={styles.stepperLabel}>MINUTE</Text>
+                      <View style={styles.stepperControls}>
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          disabled={!canEditSchedule}
+                          onPress={() => {
+                            playLightFeedback();
+                            setDraftMinuteIndex((prev) => (prev + 11) % 12);
+                          }}
+                          style={[styles.stepperBtn, !canEditSchedule && styles.stepperBtnDisabled]}
+                        >
+                          <Text style={styles.stepperBtnText}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.stepperValue}>{draftMinute}m</Text>
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          disabled={!canEditSchedule}
+                          onPress={() => {
+                            playLightFeedback();
+                            setDraftMinuteIndex((prev) => (prev + 1) % 12);
+                          }}
+                          style={[styles.stepperBtn, !canEditSchedule && styles.stepperBtnDisabled]}
+                        >
+                          <Text style={styles.stepperBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* AM / PM — own row so narrow screens never overflow */}
+                  <View style={styles.meridiemRow}>
+                    <Text style={styles.stepperLabel}>MERIDIEM</Text>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      disabled={!canEditSchedule}
+                      onPress={() => {
+                        playLightFeedback();
+                        setDraftHour((prev) => (prev >= 12 ? prev - 12 : prev + 12));
+                      }}
+                      style={[styles.meridiemBtn, !canEditSchedule && styles.stepperBtnDisabled]}
+                    >
+                      <Text style={styles.meridiemBtnText}>{isPM ? 'PM' : 'AM'}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Preset reset times (§3.3 examples) */}
+                  <Text style={styles.editorSectionLabel}>PRESETS</Text>
+                  <View style={styles.presetRow}>
+                    {[
+                      { label: 'Midnight', h: 0, m: 0 },
+                      { label: 'Early morning', h: 5, m: 0 },
+                      { label: 'Morning', h: 8, m: 0 },
+                    ].map((preset) => {
+                      const isActive = draftHour === preset.h && draftMinute === preset.m;
+                      return (
+                        <TouchableOpacity
+                          key={preset.label}
+                          activeOpacity={0.75}
+                          disabled={!canEditSchedule}
+                          onPress={() => {
+                            playLightFeedback();
+                            setDraftHour(preset.h);
+                            setDraftMinuteIndex(preset.m / 5);
+                          }}
+                          style={[
+                            styles.presetChip,
+                            isActive && styles.presetChipActive,
+                            !canEditSchedule && styles.stepperBtnDisabled,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.presetChipText,
+                              isActive && styles.presetChipTextActive,
+                            ]}
+                          >
+                            {formatClock(
+                              `${preset.h < 10 ? `0${preset.h}` : preset.h}:${preset.m < 10 ? `0${preset.m}` : preset.m}:00`
+                            )}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.presetChipSub,
+                              isActive && styles.presetChipTextActive,
+                            ]}
+                          >
+                            {preset.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Pre-reset window length */}
+                  <Text style={styles.editorSectionLabel}>PRE-RESET WINDOW</Text>
+                  <View style={styles.presetRow}>
+                    {[10, 20, 30].map((w) => {
+                      const isActive = draftWindowMinutes === w;
+                      return (
+                        <TouchableOpacity
+                          key={w}
+                          activeOpacity={0.75}
+                          disabled={!canEditSchedule}
+                          onPress={() => {
+                            playLightFeedback();
+                            setDraftWindowMinutes(w);
+                          }}
+                          style={[
+                            styles.presetChip,
+                            isActive && styles.presetChipActive,
+                            !canEditSchedule && styles.stepperBtnDisabled,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.presetChipText,
+                              isActive && styles.presetChipTextActive,
+                            ]}
+                          >
+                            {w} min
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Save */}
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    disabled={!canEditSchedule || !isScheduleDirty || isSavingSchedule}
+                    onPress={saveSchedule}
+                    style={[
+                      styles.saveScheduleBtn,
+                      (!canEditSchedule || !isScheduleDirty || isSavingSchedule) &&
+                        styles.saveScheduleBtnDisabled,
+                    ]}
+                  >
+                    {isSavingSchedule ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : (
+                      <Text style={styles.saveScheduleBtnText}>
+                        {isScheduleDirty ? 'Save Schedule' : 'Schedule Saved ✓'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {!canEditSchedule && (
+                    <Text style={styles.editorGateNote}>
+                      Per the anti-impulse rule, the reset schedule can only be changed during the{' '}
+                      {windowMinutes}-minute window ({windowOpenLabel} – {resetLabel}).
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.scheduleCard}>
                   <Text style={styles.scheduleCardTitle}>Current Daily Reset</Text>
-                  <Text style={styles.scheduleTimeLarge}>
-                    {resetWindow.reset_time?.slice(0, 5) || '08:00'}
+                  <Text style={styles.scheduleTimeLarge}>{resetLabel}</Text>
+                  <Text style={styles.scheduleTimezone}>
+                    Timezone: {activeTimezone} ({timezoneLabel(activeTimezone)})
                   </Text>
-                  <Text style={styles.scheduleTimezone}>Timezone: {resetWindow.timezone}</Text>
 
                   <View style={styles.divider} />
 
@@ -1549,25 +2248,347 @@ export default function DashboardScreen() {
                   </View>
                 </View>
 
-                {/* Quick Action to adjust Reset Time */}
+                {/* Phase-aware action: configure tomorrow's limits during the window */}
                 <TouchableOpacity
                   activeOpacity={0.85}
+                  disabled={phase !== 'RESET_WINDOW'}
                   onPress={() => {
                     playLightFeedback();
                     setShowAddModal(true);
                   }}
-                  style={styles.scheduleActionBtn}
+                  style={[
+                    styles.scheduleActionBtn,
+                    phase !== 'RESET_WINDOW' && styles.scheduleActionBtnDisabled,
+                  ]}
                 >
-                  <Text style={styles.scheduleActionBtnText}>Adjust Daily Schedule & Limits</Text>
+                  <Text style={styles.scheduleActionBtnText}>
+                    {phase === 'RESET_WINDOW'
+                      ? "Configure tomorrow's limits"
+                      : `Opens at the ${windowOpenLabel} window`}
+                  </Text>
                 </TouchableOpacity>
 
                 <View style={styles.infoCard}>
-                  <Text style={styles.infoTitle}>Why can't I edit limits anytime?</Text>
+                  <Text style={styles.infoTitle}>Why can&apos;t I edit limits anytime?</Text>
                   <Text style={styles.infoBody}>
                     FocusLock is powered by discipline, not willpower. By only permitting adjustments
                     during the calm pre-reset window, you make decisions before impulsivity takes over.
                   </Text>
                 </View>
+              </View>
+            </AnimatedTabContent>
+          )}
+
+          {/* ------------------------------------------------------------- */}
+          {/* TAB 3: ANALYTICS (Real device usage)                          */}
+          {/* ------------------------------------------------------------- */}
+          {activeTab === 'analytics' && (
+            <AnimatedTabContent key="analytics">
+              <View style={styles.tabContent}>
+                <View style={styles.tabHeader}>
+                  <Text style={styles.tabHeading}>Analytics</Text>
+                  <Text style={styles.tabSubheading}>
+                    Real screen time from Android UsageStats — per day, per app, per hour.
+                  </Text>
+                </View>
+
+                {/* Range selector */}
+                <View style={styles.rangeRow}>
+                  {([
+                    ['today', 'Today'],
+                    ['7', '7 days'],
+                    ['30', '30 days'],
+                  ] as const).map(([key, label]) => (
+                    <TouchableOpacity
+                      key={key}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        playLightFeedback();
+                        setAnalyticsRange(key);
+                      }}
+                      style={[styles.rangeBtn, analyticsRange === key && styles.rangeBtnActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.rangeBtnText,
+                          analyticsRange === key && styles.rangeBtnTextActive,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {!isUsageEngineAvailable() || !usageBridge.hasAnalyticsSupport() ? (
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptyTitle}>Analytics not in this build</Text>
+                    <Text style={styles.emptySub}>
+                      Real usage analytics need the full FocusLock Android build.
+                    </Text>
+                  </View>
+                ) : analyticsLoading && !analyticsData ? (
+                  <View style={styles.chartCard}>
+                    <SkeletonBar width="100%" height={16} borderRadius={8} />
+                    <SkeletonBar width="70%" height={16} borderRadius={8} />
+                    <SkeletonBar width="85%" height={16} borderRadius={8} />
+                  </View>
+                ) : analyticsError && !analyticsData ? (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => loadAnalytics()}
+                    style={styles.emptyCard}
+                  >
+                    <Text style={styles.emptyTitle}>Couldn't load usage data</Text>
+                    <Text style={styles.emptySub}>
+                      Real usage queries failed — tap to retry.
+                    </Text>
+                  </TouchableOpacity>
+                ) : !analyticsData || analyticsData.totalMs === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <View style={styles.emptyIconBadge}>
+                      <Image
+                        source={require('../../assets/lock.svg')}
+                        style={styles.emptyLockImg}
+                        contentFit="contain"
+                      />
+                    </View>
+                    <Text style={styles.emptyTitle}>No usage recorded yet</Text>
+                    <Text style={styles.emptySub}>
+                      Screen-time analytics appear after the device records some usage.
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* Stat cards */}
+                    <View style={styles.statsRow}>
+                      <View style={styles.statCard}>
+                        <Text style={styles.statLabel}>
+                          TOTAL ·{' '}
+                          {analyticsRange === 'today'
+                            ? 'TODAY'
+                            : analyticsRange === '7'
+                              ? '7 DAYS'
+                              : '30 DAYS'}
+                        </Text>
+                        <Text style={styles.statValue}>
+                          {formatCompact(Math.round(analyticsData.totalMs / 1000))}
+                        </Text>
+                      </View>
+                      {analyticsRange === 'today' && totalLimitSec > 0 ? (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>ALLOWANCE LEFT</Text>
+                          <Text
+                            style={[
+                              styles.statValue,
+                              totalLimitSec - Math.round(analyticsData.totalMs / 1000) <= 0 &&
+                                styles.statValueWarn,
+                            ]}
+                          >
+                            {formatCompact(
+                              Math.max(0, totalLimitSec - Math.round(analyticsData.totalMs / 1000))
+                            )}
+                          </Text>
+                        </View>
+                      ) : analyticsRange !== 'today' && analyticsData.prevTotalMs > 0 ? (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>VS PREVIOUS</Text>
+                          {(() => {
+                            const delta = analyticsData.totalMs - analyticsData.prevTotalMs;
+                            const absSec = Math.max(1, Math.round(Math.abs(delta) / 1000));
+                            return (
+                              <Text
+                                style={[
+                                  styles.statValue,
+                                  delta <= 0 ? styles.statValueGood : styles.statValueWarn,
+                                ]}
+                              >
+                                {delta <= 0 ? '-' : '+'}
+                                {formatCompact(absSec)}
+                              </Text>
+                            );
+                          })()}
+                        </View>
+                      ) : (
+                        <View style={styles.statCard}>
+                          <Text style={styles.statLabel}>DAILY AVG</Text>
+                          <Text style={styles.statValue}>
+                            {formatCompact(
+                              Math.round(analyticsData.totalMs / 1000) /
+                                (analyticsRange === 'today'
+                                  ? 1
+                                  : analyticsRange === '7'
+                                    ? 7
+                                    : 30)
+                            )}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Key insights — computed from the loaded range only */}
+                    {(() => {
+                      const maxDaily = analyticsData.daily.reduce(
+                        (m, d) => (d.usageMs > m.usageMs ? d : m),
+                        { dayStartMs: 0, dayEndMs: 0, usageMs: 0 }
+                      );
+                      const maxHourMs = Math.max(...analyticsData.hourly, 0);
+                      const peakHour = maxHourMs > 0 ? analyticsData.hourly.indexOf(maxHourMs) : -1;
+                      const showDay = analyticsData.daily.length > 1 && maxDaily.usageMs > 0;
+                      const showHour = peakHour >= 0;
+                      if (!showDay && !showHour) return null;
+                      return (
+                        <View style={styles.insightRow}>
+                          {showDay && (
+                            <View style={styles.insightChip}>
+                              <Text style={styles.insightLabel}>BUSIEST DAY</Text>
+                              <Text style={styles.insightValue}>
+                                {new Date(maxDaily.dayStartMs).toLocaleDateString([], {
+                                  weekday: 'short',
+                                })}{' '}
+                                · {formatCompact(Math.round(maxDaily.usageMs / 1000))}
+                              </Text>
+                            </View>
+                          )}
+                          {showHour && (
+                            <View style={styles.insightChip}>
+                              <Text style={styles.insightLabel}>PEAK HOUR</Text>
+                              <Text style={styles.insightValue}>
+                                {String(peakHour).padStart(2, '0')}:00–
+                                {String((peakHour + 1) % 24).padStart(2, '0')}:00
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })()}
+                    {/* Daily usage bars */}
+                    {analyticsData.daily.length > 1 &&
+                      (() => {
+                        const maxMs = Math.max(...analyticsData.daily.map((d) => d.usageMs), 1);
+                        const todayStr = new Date().toDateString();
+                        return (
+                          <View style={styles.chartCard}>
+                            <Text style={styles.chartCardTitle}>Screen time by day</Text>
+                            <View style={styles.dailyBars}>
+                              {analyticsData.daily.map((d, idx) => {
+                                const h = Math.max(3, Math.round((d.usageMs / maxMs) * 96));
+                                const dt = new Date(d.dayStartMs);
+                                const isToday = dt.toDateString() === todayStr;
+                                return (
+                                  <View key={d.dayStartMs} style={styles.dailyBarCol}>
+                                    <View
+                                      style={[
+                                        styles.dailyBar,
+                                        { height: h },
+                                        isToday && styles.dailyBarActive,
+                                      ]}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.dailyBarLabel,
+                                        isToday && styles.dailyBarLabelActive,
+                                      ]}
+                                    >
+                                      {analyticsData.daily.length > 14
+                                        ? idx % 3 === 0 || isToday
+                                          ? String(dt.getDate())
+                                          : ''
+                                        : dt.toLocaleDateString([], { weekday: 'short' }).charAt(0)}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                            <View style={styles.chartLegend}>
+                              <View
+                                style={[styles.chartLegendDot, { backgroundColor: colors.chart1 }]}
+                              />
+                              <Text style={styles.chartLegendText}>Screen time per day</Text>
+                            </View>
+                          </View>
+                        );
+                      })()}
+                    {/* Most used apps */}
+                    <View style={styles.chartCard}>
+                      <Text style={styles.chartCardTitle}>Most used apps</Text>
+                      {analyticsData.perApp.map((row, i) => {
+                        const pct =
+                          analyticsData.totalMs > 0
+                            ? Math.min(1, row.usageMs / analyticsData.totalMs)
+                            : 0;
+                        const tint = analyticsChartColors[i % analyticsChartColors.length];
+                        const limitItem = limits.find((l) => l.app_bundle_id === row.packageName);
+                        return (
+                          <View key={row.packageName} style={styles.appStatRow}>
+                            <View style={[styles.appRankBadge, { backgroundColor: `${tint}33` }]}>
+                              <Text style={[styles.appRankText, { color: tint }]}>{i + 1}</Text>
+                            </View>
+                            <View style={styles.appStatCenter}>
+                              <Text numberOfLines={1} style={styles.appStatName}>
+                                {row.label}
+                              </Text>
+                              <View style={styles.appStatTrack}>
+                                <View
+                                  style={[
+                                    styles.appStatFill,
+                                    {
+                                      width: `${Math.max(3, pct * 100)}%`,
+                                      backgroundColor:
+                                        analyticsChartColors[i % analyticsChartColors.length],
+                                    },
+                                  ]}
+                                />
+                              </View>
+                              {analyticsRange === 'today' && limitItem ? (
+                                <Text style={styles.appStatMeta}>
+                                  Limit {formatHMS(limitItem.daily_limit_seconds)}
+                                </Text>
+                              ) : null}
+                            </View>
+                            <View style={styles.appStatRight}>
+                              <Text style={styles.appStatTime}>
+                                {formatCompact(Math.round(row.usageMs / 1000))}
+                              </Text>
+                              <Text style={styles.appStatPct}>{Math.round(pct * 100)}%</Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* Hourly heatmap */}
+                    <View style={styles.chartCard}>
+                      <Text style={styles.chartCardTitle}>Usage by hour</Text>
+                      <View style={styles.heatmapGrid}>
+                        {analyticsData.hourly.map((ms, h) => {
+                          const maxH = Math.max(...analyticsData.hourly, 1);
+                          const intensity = ms > 0 ? Math.max(0.12, ms / maxH) : 0;
+                          return (
+                            <View
+                              key={h}
+                              style={[
+                                styles.heatCell,
+                                {
+                                  backgroundColor:
+                                    intensity > 0 ? colors.accent : colors.chartTrack,
+                                },
+                                intensity > 0 && { opacity: 0.25 + intensity * 0.75 },
+                              ]}
+                            />
+                          );
+                        })}
+                      </View>
+                      <View style={styles.heatLabelRow}>
+                        {['0h', '6h', '12h', '18h', '24h'].map((t) => (
+                          <Text key={t} style={styles.heatLabel}>
+                            {t}
+                          </Text>
+                        ))}
+                      </View>
+                    </View>
+                  </>
+                )}
               </View>
             </AnimatedTabContent>
           )}
@@ -1864,6 +2885,9 @@ export default function DashboardScreen() {
         onClose={() => setShowAddModal(false)}
         existingBundleIds={limits.map((l) => l.app_bundle_id)}
         currentResetTime={resetWindow.reset_time}
+        configWindowOpen={phase === 'RESET_WINDOW'}
+        windowMinutes={windowMinutes}
+        windowOpenLabel={windowOpenLabel}
         onSuccess={handleAppLimitSuccess}
         showToast={showToast}
       />
@@ -1963,6 +2987,302 @@ function createStyles(C: ThemeColors, isDark: boolean) {
   greetingBlock: {
     marginBottom: 4,
     paddingTop: 4,
+  },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  statusPillOk: {
+    backgroundColor: C.accentDim,
+    borderColor: isDark ? 'rgba(118,247,86,0.35)' : 'rgba(91,217,74,0.45)',
+  },
+  statusPillWarn: {
+    backgroundColor: C.warningDim,
+    borderColor: isDark ? 'rgba(251,191,36,0.4)' : 'rgba(245,158,11,0.45)',
+  },
+  statusDotOk: { backgroundColor: C.accent },
+  statusDotWarn: { backgroundColor: C.warning },
+  statusPillTextOk: { color: C.accentText },
+  statusPillTextWarn: { color: isDark ? '#FBBF24' : '#B45309' },
+  screenTimeCard: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: R.lg,
+    padding: S.lg,
+    marginBottom: 14,
+    ...cardShadow,
+  },
+  screenTimeLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: C.textMuted,
+  },
+  screenTimeValue: {
+    marginTop: 8,
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -1,
+    color: C.textPrimary,
+  },
+  screenTimeEmpty: {
+    marginTop: 8,
+    fontSize: 13,
+    color: C.textSecondary,
+  },
+  screenTimeCompare: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.textSecondary,
+  },
+  screenTimeCompareGood: {
+    color: C.accentText,
+  },
+  screenTimeCompareMuted: {
+    marginTop: 4,
+    fontSize: 12.5,
+    color: C.textMuted,
+  },
+  sectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionAddBtn: {
+    backgroundColor: C.accent,
+    borderRadius: R.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    minHeight: 34,
+    justifyContent: 'center',
+  },
+  sectionAddBtnText: {
+    color: C.onAccent,
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: R.md,
+    padding: S.md,
+    minHeight: 84,
+    justifyContent: 'space-between',
+  },
+  statLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: C.textMuted,
+  },
+  statValue: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    color: C.textPrimary,
+  },
+  statValueGood: { color: C.accentText },
+  statValueWarn: { color: isDark ? '#FBBF24' : '#B45309' },
+  rangeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  rangeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderRadius: R.pill,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.bgCard,
+  },
+  rangeBtnActive: {
+    backgroundColor: C.accentDim,
+    borderColor: isDark ? 'rgba(118,247,86,0.5)' : 'rgba(91,217,74,0.6)',
+  },
+  rangeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.textSecondary,
+  },
+  rangeBtnTextActive: {
+    color: C.accentText,
+  },
+  chartCard: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: R.lg,
+    padding: S.lg,
+    marginBottom: 14,
+  },
+  chartCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.textPrimary,
+    marginBottom: 12,
+  },
+  dailyBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 3,
+    height: 124,
+  },
+  dailyBarCol: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  dailyBar: {
+    width: '100%',
+    maxWidth: 26,
+    borderRadius: 5,
+    backgroundColor: C.chart1,
+  },
+  dailyBarActive: {
+    backgroundColor: C.accent,
+  },
+  dailyBarLabel: {
+    marginTop: 6,
+    fontSize: 10,
+    fontWeight: '600',
+    color: C.chartLabel,
+  },
+  dailyBarLabelActive: {
+    color: C.accentText,
+    fontWeight: '800',
+  },
+  chartLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  chartLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  chartLegendText: {
+    fontSize: 11.5,
+    color: C.textMuted,
+  },
+  appStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 7,
+  },
+  appRankBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appRankText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  appStatCenter: {
+    flex: 1,
+    minWidth: 0,
+  },
+  appStatName: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: C.textPrimary,
+  },
+  appStatTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.chartTrack,
+    marginTop: 5,
+    overflow: 'hidden',
+  },
+  appStatFill: {
+    height: 7,
+    borderRadius: 4,
+  },
+  appStatMeta: {
+    marginTop: 3,
+    fontSize: 11,
+    color: C.textMuted,
+  },
+  appStatTime: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.textSecondary,
+  },
+  appStatRight: {
+    alignItems: 'flex-end',
+    minWidth: 54,
+  },
+  appStatPct: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.textMuted,
+    marginTop: 2,
+  },
+  insightRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  insightChip: {
+    flex: 1,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: R.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  insightLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: C.textMuted,
+  },
+  insightValue: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.textPrimary,
+    letterSpacing: -0.2,
+  },
+  heatmapGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 3,
+  },
+  heatCell: {
+    width: 13,
+    height: 13,
+    borderRadius: 4,
+  },
+  heatLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  heatLabel: {
+    fontSize: 10.5,
+    color: C.chartLabel,
   },
   greetingEyebrow: {
     fontSize: 13,
@@ -2112,7 +3432,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     marginTop: 2,
   },
   sectionLink: {
-    color: C.accent,
+    color: C.accentText,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -2130,12 +3450,55 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     ...cardShadow,
   },
   appCardLockedState: {
-    backgroundColor: C.dangerDim,
-    borderColor: 'rgba(248,113,113,0.22)',
+    borderColor: isDark ? 'rgba(248,113,113,0.55)' : 'rgba(220,38,38,0.5)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#EF4444',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: isDark ? 0.35 : 0.2,
+        shadowRadius: 18,
+      },
+      android: { elevation: 9 },
+    }),
   },
   appCardWarningState: {
-    backgroundColor: C.warningDim,
-    borderColor: 'rgba(251,191,36,0.22)',
+    borderColor: isDark ? 'rgba(251,191,36,0.5)' : 'rgba(217,119,6,0.45)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#F59E0B',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: isDark ? 0.28 : 0.18,
+        shadowRadius: 16,
+      },
+      android: { elevation: 7 },
+    }),
+  },
+  glassSheen: {
+    position: 'absolute',
+    top: 1,
+    left: R.lg + 8,
+    right: R.lg + 8,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.95)',
+  },
+  lockedWash: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: R.lg,
+    backgroundColor: isDark ? 'rgba(16,10,12,0.55)' : 'rgba(32,15,17,0.45)',
+  },
+  appCardTextLocked: {
+    color: '#F4F4F5',
+  },
+  appMetaLocked: {
+    color: 'rgba(244,244,245,0.6)',
+  },
+  appBundleTextLocked: {
+    color: 'rgba(244,244,245,0.55)',
   },
   appCardTopRow: {
     flexDirection: 'row',
@@ -2198,12 +3561,12 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     borderRadius: R.pill,
   },
   badgeLocked: {
-    backgroundColor: C.dangerDim,
-    borderColor: 'rgba(248,113,113,0.28)',
+    backgroundColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(220,38,38,0.1)',
+    borderColor: isDark ? 'rgba(248,113,113,0.5)' : 'rgba(220,38,38,0.4)',
   },
   badgeWarning: {
-    backgroundColor: C.warningDim,
-    borderColor: 'rgba(251,191,36,0.28)',
+    backgroundColor: isDark ? 'rgba(245,158,11,0.18)' : 'rgba(217,119,6,0.1)',
+    borderColor: isDark ? 'rgba(251,191,36,0.45)' : 'rgba(217,119,6,0.4)',
   },
   badgeText: {
     color: C.success,
@@ -2211,28 +3574,60 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     fontWeight: '700',
   },
   badgeTextLocked: {
-    color: C.danger,
+    color: isDark ? '#FCA5A5' : '#DC2626',
+    letterSpacing: 0.8,
   },
   badgeTextWarning: {
-    color: C.warning,
+    color: isDark ? '#FBBF24' : '#B45309',
+    letterSpacing: 0.8,
   },
   cardProgressTrack: {
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 2,
+    height: 4,
+    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)',
+    borderRadius: R.pill,
     overflow: 'hidden',
     marginTop: 10,
+  },
+  cardProgressTrackLocked: {
+    backgroundColor: isDark ? 'rgba(239,68,68,0.18)' : 'rgba(220,38,38,0.12)',
+  },
+  cardProgressTrackWarning: {
+    backgroundColor: isDark ? 'rgba(245,158,11,0.18)' : 'rgba(217,119,6,0.12)',
   },
   cardProgressFill: {
     height: '100%',
     backgroundColor: C.accent,
-    borderRadius: 2,
+    borderRadius: R.pill,
   },
   cardProgressFillLocked: {
-    backgroundColor: C.danger,
+    backgroundColor: isDark ? '#F87171' : '#EF4444',
   },
   cardProgressFillWarning: {
-    backgroundColor: C.warning,
+    backgroundColor: isDark ? '#FBBF24' : '#F59E0B',
+  },
+  cardStatusNote: {
+    marginTop: 8,
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  cardStatusNoteWarning: {
+    color: isDark ? '#FBBF24' : '#B45309',
+  },
+  cardStatusNoteLocked: {
+    color: isDark ? '#FCA5A5' : '#DC2626',
+  },
+  drawerOnDark: {
+    borderTopColor: 'rgba(244,244,245,0.14)',
+  },
+  drawerDividerLocked: {
+    borderTopColor: 'rgba(244,244,245,0.14)',
+  },
+  drawerLabelOnDark: {
+    color: 'rgba(244,244,245,0.55)',
+  },
+  drawerValueOnDark: {
+    color: '#F4F4F5',
   },
   appCardDrawer: {
     marginTop: 10,
@@ -2257,6 +3652,97 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     color: C.textMuted,
     letterSpacing: 0.2,
   },
+  drawerValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.textPrimary,
+    letterSpacing: -0.1,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  drawerValueLocked: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'blue',
+    marginTop: 3,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+
+  // ─── Phase Pill (hero status) ──────────────────────────────────────────────
+  phasePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.successDim,
+    borderColor: 'rgba(118,247,86,0.30)',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: R.pill,
+  },
+  phasePillWindow: {
+    backgroundColor: C.warningDim,
+    borderColor: 'rgba(251,191,36,0.35)',
+  },
+  phaseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.success,
+  },
+  phaseDotWindow: {
+    backgroundColor: C.warning,
+  },
+  phasePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: C.success,
+  },
+  phasePillTextWindow: {
+    color: C.warning,
+  },
+
+  // ─── Configuration-window banners ──────────────────────────────────────────
+  windowBanner: {
+    backgroundColor: C.warningDim,
+    borderColor: 'rgba(251,191,36,0.35)',
+    borderWidth: 1,
+    borderRadius: R.lg,
+    padding: S.md,
+    gap: 3,
+  },
+  windowBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.warning,
+    letterSpacing: -0.2,
+  },
+  windowBannerSub: {
+    fontSize: 12,
+    color: C.textSecondary,
+    lineHeight: 17,
+  },
+  windowBannerLocked: {
+    backgroundColor: C.bgCard,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: R.lg,
+    padding: S.md,
+    gap: 3,
+  },
+  windowBannerLockedTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.textPrimary,
+    letterSpacing: -0.2,
+  },
+  windowBannerLockedSub: {
+    fontSize: 12,
+    color: C.textMuted,
+    lineHeight: 17,
+  },
   drawerActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2272,17 +3758,10 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     paddingVertical: 6,
     borderRadius: R.sm,
   },
-  drawerBtnLock: {
-    backgroundColor: C.dangerDim,
-    borderColor: 'rgba(248,113,113,0.30)',
-  },
   drawerBtnText: {
     fontSize: 11,
     fontWeight: '700',
     color: C.textPrimary,
-  },
-  drawerBtnTextLock: {
-    color: C.danger,
   },
   drawerBtnDelete: {
     backgroundColor: C.dangerDim,
@@ -2304,8 +3783,16 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     ...cardShadow,
   },
   limitConfigCardLocked: {
-    backgroundColor: C.dangerDim,
-    borderColor: 'rgba(248,113,113,0.22)',
+    borderColor: isDark ? 'rgba(248,113,113,0.55)' : 'rgba(220,38,38,0.5)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#EF4444',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: isDark ? 0.35 : 0.2,
+        shadowRadius: 18,
+      },
+      android: { elevation: 9 },
+    }),
   },
   limitCardRow: {
     flexDirection: 'row',
@@ -2320,7 +3807,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
   },
   limitPill: {
     backgroundColor: C.accentDim,
-    borderColor: 'rgba(59,130,246,0.22)',
+    borderColor: 'rgba(91,217,74,0.30)',
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -2329,17 +3816,18 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     marginLeft: 6,
   },
   limitPillText: {
-    color: C.accent,
+    color: C.accentText,
     fontSize: 12,
     fontWeight: '700',
   },
   limitPillLocked: {
-    backgroundColor: C.dangerDim,
-    borderColor: 'rgba(248,113,113,0.28)',
+    backgroundColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(220,38,38,0.1)',
+    borderColor: isDark ? 'rgba(248,113,113,0.5)' : 'rgba(220,38,38,0.4)',
     borderWidth: 1,
   },
   limitPillTextLocked: {
-    color: C.danger,
+    color: isDark ? '#FCA5A5' : '#DC2626',
+    letterSpacing: 0.8,
   },
   limitCardFooter: {
     borderTopWidth: 1,
@@ -2350,6 +3838,12 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     fontSize: 12,
     color: C.textMuted,
     fontWeight: '500',
+  },
+  limitCardFooterLocked: {
+    borderTopColor: 'rgba(244,244,245,0.14)',
+  },
+  lockNoticeLocked: {
+    color: 'rgba(244,244,245,0.7)',
   },
   categoryBadgeTiny: {
     backgroundColor: 'rgba(255,255,255,0.07)',
@@ -2363,80 +3857,6 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     fontSize: 9,
     fontWeight: '700',
     color: C.textMuted,
-  },
-
-  // ─── Notification Test Card ────────────────────────────────────────────────
-  testNotificationCard: {
-    backgroundColor: C.bgCard,
-    borderRadius: R.xl,
-    padding: S.lg,
-    marginBottom: S.lg,
-    borderWidth: 1,
-    borderColor: C.border,
-    ...cardShadow,
-  },
-  testHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: S.sm,
-  },
-  testIconPill: {
-    backgroundColor: 'rgba(132,204,22,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(132,204,22,0.25)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: R.pill,
-  },
-  testIconPillText: {
-    color: '#86EFAC',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.0,
-  },
-  testCardTitle: {
-    color: C.textPrimary,
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
-  testCardSub: {
-    color: C.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: S.md,
-  },
-  testButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  testBtn: {
-    flex: 1,
-    borderRadius: R.md,
-    paddingVertical: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  testBtnLock: {
-    backgroundColor: 'rgba(248,113,113,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.35)',
-  },
-  testBtnWarning: {
-    backgroundColor: 'rgba(251,191,36,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.30)',
-  },
-  testBtnReset: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: C.borderLight,
-  },
-  testBtnText: {
-    color: C.textPrimary,
-    fontSize: 12,
-    fontWeight: '700',
   },
 
   // ─── Buttons ───────────────────────────────────────────────────────────────
@@ -2457,7 +3877,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     }),
   },
   addBtnText: {
-    color: '#FFFFFF',
+    color: C.onAccent,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -2503,6 +3923,240 @@ function createStyles(C: ThemeColors, isDark: boolean) {
   },
 
   // ─── Schedule Tab ──────────────────────────────────────────────────────────
+  // ─── Schedule Tab: Phase card ──────────────────────────────────────────────
+  phaseCard: {
+    backgroundColor: C.bgCard,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: R.lg,
+    padding: S.lg,
+    gap: 6,
+    ...cardShadow,
+  },
+  phaseCardWindow: {
+    backgroundColor: C.warningDim,
+    borderColor: 'rgba(251,191,36,0.35)',
+  },
+  phaseCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  phaseCardTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.0,
+    color: C.success,
+  },
+  phaseCardTitleWindow: {
+    color: C.warning,
+  },
+  phaseCardCountdown: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: C.textPrimary,
+    letterSpacing: -1.0,
+    fontVariant: ['tabular-nums'],
+  },
+  phaseCardSub: {
+    fontSize: 12,
+    color: C.textSecondary,
+    lineHeight: 17,
+  },
+
+  // ─── Schedule Tab: Reset-time editor ───────────────────────────────────────
+  scheduleEditorCard: {
+    backgroundColor: C.bgCard,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: R.lg,
+    padding: S.lg,
+    gap: S.md,
+    ...cardShadow,
+  },
+  editorHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  editorTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.textPrimary,
+    letterSpacing: -0.3,
+  },
+  editorLockText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  editorPreviewBox: {
+    alignItems: 'center',
+    backgroundColor: C.bgSecondary,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: R.md,
+    paddingVertical: S.md,
+    gap: 2,
+  },
+  editorPreview: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: C.textPrimary,
+    letterSpacing: -1.5,
+    fontVariant: ['tabular-nums'],
+  },
+  editorPreviewSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: C.textMuted,
+  },
+  editorSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: C.textMuted,
+    marginTop: 2,
+  },
+
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  stepperCol: {
+    flex: 1,
+    backgroundColor: C.bgSecondary,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: R.md,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepperLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.0,
+    color: C.textMuted,
+  },
+  stepperControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stepperBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: C.bgInput,
+    borderColor: C.border,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperBtnDisabled: {
+    opacity: 0.4,
+  },
+  stepperBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.textPrimary,
+  },
+  stepperValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.textPrimary,
+    minWidth: 34,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  meridiemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.bgSecondary,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: R.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  meridiemBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+    borderRadius: R.sm,
+    backgroundColor: C.accentDim,
+    borderColor: C.accent,
+    borderWidth: 1,
+  },
+  meridiemBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.accentText,
+    letterSpacing: 0.5,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  presetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: R.sm,
+    backgroundColor: C.bgInput,
+    borderColor: C.border,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 1,
+  },
+  presetChipActive: {
+    backgroundColor: C.accentDim,
+    borderColor: C.accent,
+  },
+  presetChipText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
+  presetChipTextActive: {
+    color: C.accentText,
+  },
+  presetChipSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: C.textMuted,
+  },
+  saveScheduleBtn: {
+    backgroundColor: C.accent,
+    borderRadius: R.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  saveScheduleBtnDisabled: {
+    backgroundColor: C.bgSecondary,
+    borderColor: C.border,
+    borderWidth: 1,
+  },
+  saveScheduleBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.onAccent,
+    letterSpacing: -0.2,
+  },
+  editorGateNote: {
+    fontSize: 11,
+    color: C.textMuted,
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+
   scheduleCard: {
     backgroundColor: C.bgCard,
     borderRadius: R.xl,
@@ -2546,7 +4200,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     alignItems: 'center',
   },
   timelineHour: {
-    color: C.accent,
+    color: C.accentText,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -2592,9 +4246,12 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     }),
   },
   scheduleActionBtnText: {
-    color: '#FFFFFF',
+    color: C.onAccent,
     fontSize: 14,
     fontWeight: '700',
+  },
+  scheduleActionBtnDisabled: {
+    opacity: 0.45,
   },
 
   // ─── Empty State ───────────────────────────────────────────────────────────
@@ -2648,7 +4305,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     alignItems: 'center',
   },
   emptyAddBtnText: {
-    color: '#FFFFFF',
+    color: C.onAccent,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -2683,7 +4340,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     justifyContent: 'center',
   },
   profileInitialLarge: {
-    color: '#FFFFFF',
+    color: C.onAccent,
     fontSize: 22,
     fontWeight: '700',
   },
@@ -2699,7 +4356,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     marginTop: 2,
   },
   changeAvatarText: {
-    color: C.accent,
+    color: C.accentText,
     fontSize: 13,
     fontWeight: '500',
     marginTop: 4,
@@ -2810,7 +4467,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     marginTop: S.md,
   },
   openSettingsBtnText: {
-    color: '#FFFFFF',
+    color: C.onAccent,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -2874,7 +4531,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     alignItems: 'center',
   },
   modalPrimaryBtnText: {
-    color: '#FFFFFF',
+    color: C.onAccent,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -2951,7 +4608,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     color: C.textSecondary,
   },
   themeOptionTextActive: {
-    color: C.accent,
+    color: C.accentText,
     fontWeight: '700',
   },
   themeActiveDot: {

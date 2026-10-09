@@ -1,0 +1,9 @@
+{
+  "platforms": ["android", "ios"],
+  "android": {
+    "modules": ["com.focuslock.appdiscovery.AppDiscoveryModule"]
+  },
+  "ios": {
+    "modules": ["AppDiscoveryModule"]
+  }
+}

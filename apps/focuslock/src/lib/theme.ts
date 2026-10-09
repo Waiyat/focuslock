@@ -29,7 +29,9 @@ export const darkColors = {
   textAccent:    '#76F756',
 
   // Brand / Accents (Neon green + glassy teal from logo!)
-  accent:        '#76F756',       // Electric neon green from FocusLock logo
+  accent:        '#76F756',       // Electric neon green from FocusLock logo (FILL)
+  accentText:    '#76F756',       // Accent as TEXT — readable on dark surfaces
+  onAccent:      '#07120A',       // Content ON an accent fill (dark ink on neon)
   accentGlow:    'rgba(118,247,86,0.35)',
   accentDim:     'rgba(118,247,86,0.14)',
   accentSecond:  '#10B981',       // Teal
@@ -48,6 +50,16 @@ export const darkColors = {
   orbBlue:       'rgba(14,165,233,0.10)',
   orbViolet:     'rgba(124,58,237,0.10)',
   orbCyan:       'rgba(6,182,212,0.10)',
+
+  // Chart series palette (works on dark canvas, neon-green leads the brand)
+  chart1:        '#76F756',       // Brand neon green
+  chart2:        '#22D3EE',       // Cyan
+  chart3:        '#A78BFA',       // Violet
+  chart4:        '#FBBF24',       // Amber
+  chart5:        '#F472B6',       // Pink
+  chart6:        '#38BDF8',       // Sky
+  chartTrack:    'rgba(255,255,255,0.08)',  // Bar/axis track behind series
+  chartLabel:    '#8A93A8',                 // Axis & tick label text
 
   white:         '#FFFFFF',
   black:         '#000000',
@@ -75,13 +87,15 @@ export const lightColors = {
   textPrimary:   '#0F172A',
   textSecondary: '#475569',
   textMuted:     '#94A3B8',
-  textAccent:    '#2563EB',
+  textAccent:    '#15803D',
 
-  // Brand / Accents
-  accent:        '#2563EB',       // Vivid royal blue
-  accentGlow:    'rgba(37,99,235,0.18)',
-  accentDim:     'rgba(37,99,235,0.08)',
-  accentSecond:  '#7C3AED',       // Purple
+  // Brand / Accents (Neon green is the primary brand accent in BOTH themes)
+  accent:        '#5BD94A',       // Neon-green fill, slightly toned for light surfaces
+  accentText:    '#15803D',       // Deeper green — accessible as TEXT on white/light
+  onAccent:      '#06210B',       // Dark ink readable on the neon-green fill
+  accentGlow:    'rgba(91,217,74,0.28)',
+  accentDim:     'rgba(91,217,74,0.14)',
+  accentSecond:  '#10B981',       // Teal
 
   // Semantic States
   danger:        '#EF4444',
@@ -97,6 +111,16 @@ export const lightColors = {
   orbBlue:       'rgba(37,99,235,0.08)',
   orbViolet:     'rgba(124,58,237,0.06)',
   orbCyan:       'rgba(6,182,212,0.06)',
+
+  // Chart series palette (readable on light surfaces, neon-green leads)
+  chart1:        '#3FA50F',       // Deepened neon green — readable bars/lines on light
+  chart2:        '#0891B2',       // Cyan-700
+  chart3:        '#7C3AED',       // Violet-600
+  chart4:        '#D97706',       // Amber-600
+  chart5:        '#DB2777',       // Pink-600
+  chart6:        '#2563EB',       // Blue-600
+  chartTrack:    'rgba(15,23,42,0.08)',    // Bar/axis track behind series
+  chartLabel:    '#64748B',                 // Axis & tick label text
 
   white:         '#FFFFFF',
   black:         '#000000',

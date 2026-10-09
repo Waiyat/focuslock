@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Platform,
   Linking,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,6 +22,7 @@ import {
   registerPushToken,
 } from '../lib/notifications';
 import { markOnboardingComplete, isOnboardingComplete } from '../lib/onboarding';
+import { usageBridge } from '../lib/usage/usageBridge';
 
 type OnboardingStep = 'terms' | 'permissions';
 
@@ -134,22 +136,49 @@ export default function OnboardingScreen() {
   };
 
   // ── Step 2: Request Screen Time / Usage Access Permission ───────────────────
+  /**
+   * Android Usage Access is SPECIAL access granted via Android Settings — it
+   * is never assumed. The exact Settings screen is opened and "granted" is
+   * only reported when Android itself confirms it on return.
+   */
+  const verifyUsageAccess = useCallback(async () => {
+    if (Platform.OS !== 'android') return;
+    try {
+      const granted = await usageBridge.isUsageAccessGranted();
+      setUsagePermission(granted ? 'granted' : 'undetermined');
+    } catch {
+      // Native engine missing (e.g. Expo Go) — stays undetermined; the
+      // dashboard banner explains a development build is required.
+    }
+  }, []);
+
   const handleRequestUsagePermission = async () => {
     if (Platform.OS === 'ios') {
       // On iOS in production this connects to FamilyControls AuthorizationCenter
       setUsagePermission('granted');
     } else {
-      // On Android this opens usage access settings
       try {
-        if (Platform.OS === 'android') {
-          await Linking.openSettings().catch(() => {});
-        }
+        await usageBridge.openUsageAccessSettings();
       } catch {
-        // graceful fallback
+        await Linking.openSettings().catch(() => {});
       }
-      setUsagePermission('granted');
+      verifyUsageAccess();
     }
   };
+
+  // Verify real Usage Access on mount and whenever we return from Settings.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    // Deferred so the effect body performs no synchronous state work.
+    const initialCheck = setTimeout(verifyUsageAccess, 0);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') verifyUsageAccess();
+    });
+    return () => {
+      clearTimeout(initialCheck);
+      subscription.remove();
+    };
+  }, [verifyUsageAccess]);
 
   // ── Complete Onboarding & Navigate to Dashboard ─────────────────────────────
   const handleCompleteOnboarding = async () => {

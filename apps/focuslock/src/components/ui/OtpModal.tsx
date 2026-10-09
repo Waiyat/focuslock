@@ -20,7 +20,14 @@ interface OtpModalProps {
   title?: string;
   subtitle?: string;
   email: string;
-  onVerify: (code: string) => Promise<boolean | void>;
+  /**
+   * Verify the entered code.
+   * - resolves `true`/`void` → success (modal closes via caller navigation)
+   * - resolves `false` → generic failure (modal shows a default message + shakes)
+   * - resolves a `string` → that message is shown inline in the modal + shakes
+   *   (toasts render BEHIND this modal, so failures must surface inline)
+   */
+  onVerify: (code: string) => Promise<boolean | string | void>;
   onResend: () => Promise<boolean | void>;
   onClose: () => void;
   initialCooldown?: number;
@@ -188,8 +195,17 @@ export function OtpModal({
 
     try {
       const res = await onVerify(code);
-      if (res === false) {
+      if (typeof res === 'string') {
+        // Caller-provided failure reason — always shown INSIDE the modal so
+        // the shake is never unexplained (toasts sit behind this modal).
         triggerShake();
+        setErrorMessage(res);
+        setDigits(Array(NUM_DIGITS).fill(''));
+        setFocusedIndex(0);
+        setTimeout(() => boxRefs.current[0]?.focus(), 100);
+      } else if (res === false) {
+        triggerShake();
+        setErrorMessage('Incorrect or expired code. Please try again.');
         setDigits(Array(NUM_DIGITS).fill(''));
         setFocusedIndex(0);
         setTimeout(() => boxRefs.current[0]?.focus(), 100);

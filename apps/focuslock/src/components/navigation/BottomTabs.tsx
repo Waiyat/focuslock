@@ -14,7 +14,7 @@ import { playSelectionFeedback } from '../../lib/feedback';
 import { R, getGlassNavShadow } from '../../lib/theme';
 import { useTheme } from '../../lib/ThemeContext';
 
-export type TabKey = 'home' | 'limits' | 'schedule' | 'settings';
+export type TabKey = 'home' | 'limits' | 'analytics' | 'settings';
 
 interface TabItem {
   key: TabKey;
@@ -23,10 +23,10 @@ interface TabItem {
 }
 
 const TABS: TabItem[] = [
-  { key: 'home',     label: 'Home',     icon: require('../../../assets/tab-home.svg') },
-  { key: 'limits',   label: 'Limits',   icon: require('../../../assets/tab-limits.svg') },
-  { key: 'schedule', label: 'Schedule', icon: require('../../../assets/tab-schedule.svg') },
-  { key: 'settings', label: 'Settings', icon: require('../../../assets/tab-settings.svg') },
+  { key: 'home',      label: 'Home',      icon: require('../../../assets/tab-home.svg') },
+  { key: 'limits',    label: 'Limits',    icon: require('../../../assets/tab-limits.svg') },
+  { key: 'analytics', label: 'Analytics', icon: require('../../../assets/tab-analytics.svg') },
+  { key: 'settings',  label: 'Settings',  icon: require('../../../assets/tab-settings.svg') },
 ];
 
 interface BottomTabsProps {
@@ -178,10 +178,10 @@ export function BottomTabs({ activeTab, onSelectTab }: BottomTabsProps) {
     },
   ];
 
-  // High-contrast, vivid highlights on dark mode
-  const activeBgColor = isDark ? 'rgba(56, 189, 248, 0.20)' : 'rgba(37, 99, 235, 0.08)';
-  const activeBorderColor = isDark ? '#38BDF8' : 'rgba(37, 99, 235, 0.24)';
-  const accentColor = isDark ? '#38BDF8' : '#2563EB';
+  // High-contrast, vivid highlights — neon-green brand, themed per mode
+  const activeBgColor = isDark ? 'rgba(118, 247, 86, 0.16)' : 'rgba(91, 217, 74, 0.10)';
+  const activeBorderColor = isDark ? 'rgba(118, 247, 86, 0.60)' : 'rgba(91, 217, 74, 0.50)';
+  const accentColor = isDark ? '#76F756' : '#15803D';
   const inactiveColor = isDark ? '#94A3B8' : '#64748B';
 
   return (

@@ -1,0 +1,114 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    xmlns:tools="http://schemas.android.com/tools"
+4    package="com.focuslock.usage" >
+5
+6    <uses-sdk android:minSdkVersion="24" />
+7
+8    <!--
+9       Special access: granted by the user through Android Settings
+10       (Settings.ACTION_USAGE_ACCESS_SETTINGS), not a runtime dialog.
+11    -->
+12    <uses-permission
+12-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:6:3-7:43
+13        android:name="android.permission.PACKAGE_USAGE_STATS"
+13-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:6:20-73
+14        tools:ignore="ProtectedPermissions" />
+14-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:7:5-40
+15
+16    <!--
+17       Foreground service that runs the usage polling loop while limits are
+18       active, with a persistent disclosure notification.
+19    -->
+20    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+20-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:11:3-75
+20-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:11:20-72
+21    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+21-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:12:3-87
+21-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:12:20-84
+22
+23    <!--
+24       Restart monitoring after a device reboot (already declared app-wide,
+25       repeated here so the module is self-contained; manifest merge dedupes).
+26    -->
+27    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+27-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:16:3-79
+27-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:16:20-76
+28
+29    <application>
+29-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:18:3-56:17
+30        <service
+30-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:19:5-26:15
+31            android:name="com.focuslock.usage.MonitorService"
+31-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:20:7-56
+32            android:exported="false"
+32-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:21:7-31
+33            android:foregroundServiceType="specialUse" >
+33-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:22:7-49
+34            <property
+34-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:23:7-25:117
+35                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+35-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:24:9-68
+36                android:value="Monitors foreground app usage to enforce the user&apos;s own configured daily app time limits." />
+36-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:25:9-114
+37        </service>
+38
+39        <receiver
+39-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:28:5-34:16
+40            android:name="com.focuslock.usage.BootReceiver"
+40-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:29:7-54
+41            android:exported="false" >
+41-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:30:7-31
+42            <intent-filter>
+42-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:31:7-33:23
+43                <action android:name="android.intent.action.BOOT_COMPLETED" />
+43-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:32:9-71
+43-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:32:17-68
+44            </intent-filter>
+45        </receiver>
+46
+47        <!--
+48         Developer-only test plumbing. Every action is inert outside debuggable
+49         builds (enforced in code) and can only configure limits, never unlock.
+50        -->
+51        <receiver
+51-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:38:5-48:16
+52            android:name="com.focuslock.usage.DevTestReceiver"
+52-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:39:7-57
+53            android:exported="true" >
+53-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:40:7-30
+54            <intent-filter>
+54-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:41:7-47:23
+55                <action android:name="com.focuslock.usage.DEV_SET_LIMITS" />
+55-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:42:9-69
+55-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:42:17-66
+56                <action android:name="com.focuslock.usage.DEV_DUMP_STATUS" />
+56-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:43:9-70
+56-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:43:17-67
+57                <action android:name="com.focuslock.usage.DEV_DUMP_USAGE" />
+57-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:44:9-69
+57-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:44:17-66
+58                <action android:name="com.focuslock.usage.DEV_DUMP_EVENTS" />
+58-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:45:9-70
+58-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:45:17-67
+59                <action android:name="com.focuslock.usage.DEV_REBUILD" />
+59-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:46:9-66
+59-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:46:17-63
+60            </intent-filter>
+61        </receiver>
+62
+63        <activity
+63-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:50:5-55:78
+64            android:name="com.focuslock.usage.LockActivity"
+64-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:51:7-54
+65            android:excludeFromRecents="true"
+65-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:53:7-40
+66            android:exported="false"
+66-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:52:7-31
+67            android:launchMode="singleTask"
+67-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:54:7-38
+68            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+68-->/Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/usage-monitor/android/src/main/AndroidManifest.xml:55:7-75
+69    </application>
+70
+71</manifest>

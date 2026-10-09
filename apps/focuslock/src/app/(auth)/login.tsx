@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,16 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { Input } from '../../components/ui/Input';
 import { Toast } from '../../components/ui/Toast';
+import { OtpModal } from '../../components/ui/OtpModal';
 import { supabase } from '../../lib/supabase';
 import { playErrorFeedback } from '../../lib/feedback';
 import { isOnboardingComplete } from '../../lib/onboarding';
+import { resendRegisterOtp, verifyRegisterOtp } from '../../lib/api';
+import { claimDeviceSession } from '../../lib/deviceSession';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -26,12 +29,25 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
 
   const [toast, setToast] = useState<{
     visible: boolean;
     message: string;
     type?: 'error' | 'info' | 'success';
   }>({ visible: false, message: '', type: 'error' });
+
+  // Flash message handed over from other screens (e.g. register → login).
+  const { flash } = useLocalSearchParams<{ flash?: string }>();
+  useEffect(() => {
+    if (!flash) return;
+    // Deferred so the effect body performs no synchronous state work.
+    const timer = setTimeout(
+      () => setToast({ visible: true, message: String(flash), type: 'success' }),
+      0
+    );
+    return () => clearTimeout(timer);
+  }, [flash]);
 
   const emailShakeAnim = useRef(new Animated.Value(0)).current;
   const passwordShakeAnim = useRef(new Animated.Value(0)).current;
@@ -105,33 +121,102 @@ export default function LoginScreen() {
     return valid;
   };
 
+  /** Shared success path — the requested smart gate: verified? → onboarding check → dashboard. */
+  const finishSignIn = async (user: any) => {
+    const onboarded = await isOnboardingComplete(user);
+    // Single-device session: claim THIS install as the holder (latest wins).
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        await claimDeviceSession(data.session.access_token);
+      }
+    } catch {
+      /* non-blocking — the foreground check retries when online */
+    }
+    router.replace(onboarded ? '/dashboard' : '/onboarding');
+  };
+
   const handleSignIn = async () => {
+    if (isLoading) return;
     if (!validate()) return;
     setIsLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       password,
     });
 
-    setIsLoading(false);
-
     if (error) {
-      if (error.message.toLowerCase().includes('invalid login')) {
+      const message = (error.message || '').toLowerCase();
+      const unconfirmed =
+        (error as any).code === 'email_not_confirmed' ||
+        message.includes('not confirmed') ||
+        message.includes('confirm your email');
+
+      if (message.includes('invalid login')) {
+        setIsLoading(false);
         triggerInputShake(emailShakeAnim);
         triggerInputShake(passwordShakeAnim);
         showToast('Incorrect email or password. Please try again.');
-      } else if (error.message.toLowerCase().includes('email not confirmed')) {
-        showToast('Please verify your email address before signing in.', 'info');
-      } else {
-        showToast(error.message ?? 'Sign in failed. Please try again.');
+        return;
       }
+
+      if (unconfirmed) {
+        // Requested flow: unverified email → take the user straight into
+        // verification instead of a dead-end toast.
+        showToast(
+          'Your email is not verified yet — enter the code we send you to continue.',
+          'info'
+        );
+        const resend = await resendRegisterOtp(cleanEmail);
+        setIsLoading(false);
+        if (resend.error) {
+          showToast(resend.error, 'error');
+          return;
+        }
+        setShowOtpModal(true);
+        return;
+      }
+
+      setIsLoading(false);
+      showToast(error.message ?? 'Sign in failed. Please try again.');
       return;
     }
 
-    // Success: gate on onboarding before going to dashboard
-    const onboarded = await isOnboardingComplete(data?.user);
-    router.replace(onboarded ? '/dashboard' : '/onboarding');
+    setIsLoading(false);
+    // Verified (or confirmation not required): onboarding gate decides the rest.
+    await finishSignIn(data?.user);
+  };
+
+  /** Verification during sign-in: on success we re-run the blocked sign-in. */
+  const handleVerifyLoginOtp = async (code: string): Promise<boolean | string> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const res = await verifyRegisterOtp(cleanEmail, code);
+    if (res.error) return res.error; // shown inline by OtpModal (not a toast)
+
+    setIsLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+    setIsLoading(false);
+
+    if (error) {
+      const message = error.message || 'Sign in failed. Please try again.';
+      return message.toLowerCase().includes('invalid login')
+        ? 'Incorrect password for this account.'
+        : message;
+    }
+
+    setShowOtpModal(false);
+    await finishSignIn(data?.user);
+    return true;
+  };
+
+  const handleResendLoginOtp = async () => {
+    const res = await resendRegisterOtp(email.trim().toLowerCase());
+    if (res.error) throw new Error(res.error); // OtpModal shows this inline
   };
 
   const handleGoogleSignIn = async () => {
@@ -153,6 +238,19 @@ export default function LoginScreen() {
         message={toast.message}
         type={toast.type}
         onDismiss={() => setToast((prev) => ({ ...prev, visible: false }))}
+      />
+
+      {/* Email verification — opened automatically when sign-in is blocked
+          by an unverified email (verification code flow). */}
+      <OtpModal
+        visible={showOtpModal}
+        title="Verify Your Email"
+        subtitle="Enter the 6-digit code we sent to"
+        email={email.trim().toLowerCase()}
+        onVerify={handleVerifyLoginOtp}
+        onResend={handleResendLoginOtp}
+        onClose={() => setShowOtpModal(false)}
+        initialCooldown={120}
       />
 
       <View style={styles.ambientBlobTop} />

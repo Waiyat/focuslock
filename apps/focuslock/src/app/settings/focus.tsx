@@ -206,9 +206,9 @@ function createFocusStyles(colors: any, isDark: boolean) {
   statusOk: { backgroundColor: isDark ? 'rgba(16,185,129,0.16)' : '#f0fdf4', borderWidth: 1, borderColor: isDark ? 'rgba(16,185,129,0.3)' : '#bbf7d0' },
   statusErr: { backgroundColor: isDark ? 'rgba(239,68,68,0.16)' : '#fef2f2', borderWidth: 1, borderColor: isDark ? 'rgba(239,68,68,0.3)' : '#fecaca' },
   statusText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  selectedRow: { backgroundColor: isDark ? 'rgba(59,130,246,0.18)' : '#f5f9ff' },
-  selectedLabel: { color: colors.accent, fontWeight: '600' },
-  checkmark: { color: colors.accent, fontSize: 18, fontWeight: '700' },
+  selectedRow: { backgroundColor: isDark ? 'rgba(118,247,86,0.14)' : '#f2fff0' },
+  selectedLabel: { color: colors.accentText, fontWeight: '600' },
+  checkmark: { color: colors.accentText, fontSize: 18, fontWeight: '700' },
   btnDisabled: { opacity: 0.45 },
   upToDate: {
     color: colors.textMuted,

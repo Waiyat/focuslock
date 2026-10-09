@@ -1,0 +1,7 @@
+com.focuslock.appdiscovery.app-discovery-pngs-0 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/generated/res/pngs/release
+com.focuslock.appdiscovery.app-discovery-resValues-1 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/generated/res/resValues/release
+com.focuslock.appdiscovery.app-discovery-mergeReleaseResources-2 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+com.focuslock.appdiscovery.app-discovery-mergeReleaseResources-3 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+com.focuslock.appdiscovery.app-discovery-release-4 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/build/intermediates/merged_res/release/mergeReleaseResources
+com.focuslock.appdiscovery.app-discovery-main-5 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/src/main/res
+com.focuslock.appdiscovery.app-discovery-release-6 /Users/macuser/PROJECTS/App/focuslock/apps/focuslock/modules/app-discovery/android/src/release/res

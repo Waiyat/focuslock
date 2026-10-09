@@ -323,8 +323,8 @@ export default function SettingsScreen() {
               {themeMode === 'system'
                 ? `Automatic · Dark at night (7 PM – 6 AM), Light during the day (${isDark ? 'Dark mode currently active' : 'Light mode currently active'}).`
                 : themeMode === 'light'
-                ? 'Always uses clean Light theme.'
-                : 'Always uses sleek Dark Glass theme.'}
+                  ? 'Always uses clean Light theme.'
+                  : 'Always uses sleek Dark Glass theme.'}
             </Text>
           </View>
         </View>
@@ -359,7 +359,7 @@ export default function SettingsScreen() {
             />
           </View>
           <Text style={styles.footerName}>FocusLock</Text>
-          <Text style={styles.footerVersion}>Version 1.0.0 (Build 1)</Text>
+          <Text style={styles.footerVersion}>Version 1.0.3</Text>
           <Text style={styles.footerCopy}>Waiyat Labs Inc. All rights reserved.</Text>
         </View>
       </ScrollView>
@@ -390,7 +390,7 @@ function createSettingsStyles(C: ThemeColors, isDark: boolean) {
       paddingRight: 8,
     },
     backArrow: {
-      color: C.accent,
+      color: C.accentText,
       fontSize: 32,
       lineHeight: 32,
       fontWeight: '300',
@@ -398,7 +398,7 @@ function createSettingsStyles(C: ThemeColors, isDark: boolean) {
       marginRight: 2,
     },
     backText: {
-      color: C.accent,
+      color: C.accentText,
       fontSize: 17,
       fontWeight: '400',
     },
@@ -512,7 +512,7 @@ function createSettingsStyles(C: ThemeColors, isDark: boolean) {
       color: C.textSecondary,
     },
     appearanceLabelActive: {
-      color: C.accent,
+      color: C.accentText,
       fontWeight: '700',
     },
     appearanceCheck: {

@@ -18,8 +18,8 @@ export function SubHeader({ title, onBack }: { title: string; onBack: () => void
       ]}
     >
       <TouchableOpacity onPress={onBack} style={headerStyles.backBtn} activeOpacity={0.6}>
-        <Text style={[headerStyles.backArrow, { color: colors.accent }]}>‹</Text>
-        <Text style={[headerStyles.backText, { color: colors.accent }]}>Settings</Text>
+        <Text style={[headerStyles.backArrow, { color: colors.accentText }]}>‹</Text>
+        <Text style={[headerStyles.backText, { color: colors.accentText }]}>Settings</Text>
       </TouchableOpacity>
       <Text style={[headerStyles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
         {title}

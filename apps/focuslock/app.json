@@ -6,18 +6,18 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/focuslock-icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "notification": {
-      "icon": "./assets/focuslock-icon.png",
-      "color": "#09090b",
+      "icon": "./assets/notification-icon.png",
+      "color": "#FFFFFF",
       "iosDisplayInForeground": true
     },
     "plugins": [
       [
         "expo-notifications",
         {
-          "icon": "./assets/focuslock-icon.png",
-          "color": "#09090b",
+          "icon": "./assets/notification-icon.png",
+          "color": "#FFFFFF",
           "sounds": ["./assets/notification_chime.wav"]
         }
       ]
@@ -53,6 +53,7 @@
     },
     "android": {
       "package": "com.focuslock.app",
+      "userInterfaceStyle": "automatic",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

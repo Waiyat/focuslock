@@ -1,0 +1,57 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+
+  <!-- Special access: granted by the user through Android Settings
+       (Settings.ACTION_USAGE_ACCESS_SETTINGS), not a runtime dialog. -->
+  <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+    tools:ignore="ProtectedPermissions" />
+
+  <!-- Foreground service that runs the usage polling loop while limits are
+       active, with a persistent disclosure notification. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+  <!-- Restart monitoring after a device reboot (already declared app-wide,
+       repeated here so the module is self-contained; manifest merge dedupes). -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+  <application>
+    <service
+      android:name="com.focuslock.usage.MonitorService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Monitors foreground app usage to enforce the user's own configured daily app time limits." />
+    </service>
+
+    <receiver
+      android:name="com.focuslock.usage.BootReceiver"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Developer-only test plumbing. Every action is inert outside debuggable
+         builds (enforced in code) and can only configure limits, never unlock. -->
+    <receiver
+      android:name="com.focuslock.usage.DevTestReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="com.focuslock.usage.DEV_SET_LIMITS" />
+        <action android:name="com.focuslock.usage.DEV_DUMP_STATUS" />
+        <action android:name="com.focuslock.usage.DEV_DUMP_USAGE" />
+        <action android:name="com.focuslock.usage.DEV_DUMP_EVENTS" />
+        <action android:name="com.focuslock.usage.DEV_REBUILD" />
+      </intent-filter>
+    </receiver>
+
+    <activity
+      android:name="com.focuslock.usage.LockActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:launchMode="singleTask"
+      android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+  </application>
+</manifest>
