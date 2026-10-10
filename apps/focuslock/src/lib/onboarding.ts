@@ -1,4 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  safeGetItem,
+  safeSetItem,
+  safeRemoveItem,
+} from './safeStorage';
 import { supabase } from './supabase';
 import { syncOnboardingCompleteToBackend, fetchOnboardingStatusFromBackend } from './api';
 
@@ -32,14 +36,14 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
         Boolean(userCandidate.user_metadata?.accepted_terms_at);
 
       if (candidateMetaComplete) {
-        await AsyncStorage.setItem(getUserOnboardingKey(userCandidate.id), 'true').catch(() => {});
-        await AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+        await safeSetItem(getUserOnboardingKey(userCandidate.id), 'true').catch(() => {});
+        await safeSetItem(ONBOARDING_KEY, 'true').catch(() => {});
         return true;
       }
 
       // Check user-scoped local flag
       if (userCandidate.id) {
-        const userFlag = await AsyncStorage.getItem(getUserOnboardingKey(userCandidate.id)).catch(() => null);
+        const userFlag = await safeGetItem(getUserOnboardingKey(userCandidate.id)).catch(() => null);
         if (userFlag === 'true') {
           return true;
         }
@@ -76,7 +80,7 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
     // 3. Check active user metadata & user-scoped storage
     if (activeUser) {
       if (activeUser.id) {
-        const userFlag = await AsyncStorage.getItem(getUserOnboardingKey(activeUser.id)).catch(() => null);
+        const userFlag = await safeGetItem(getUserOnboardingKey(activeUser.id)).catch(() => null);
         if (userFlag === 'true') {
           return true;
         }
@@ -88,9 +92,9 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
 
       if (metadataComplete) {
         if (activeUser.id) {
-          await AsyncStorage.setItem(getUserOnboardingKey(activeUser.id), 'true').catch(() => {});
+          await safeSetItem(getUserOnboardingKey(activeUser.id), 'true').catch(() => {});
         }
-        await AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+        await safeSetItem(ONBOARDING_KEY, 'true').catch(() => {});
         return true;
       }
 
@@ -104,9 +108,9 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
 
         if (profile?.accepted_terms_at) {
           if (activeUser.id) {
-            await AsyncStorage.setItem(getUserOnboardingKey(activeUser.id), 'true').catch(() => {});
+            await safeSetItem(getUserOnboardingKey(activeUser.id), 'true').catch(() => {});
           }
-          await AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+          await safeSetItem(ONBOARDING_KEY, 'true').catch(() => {});
 
           // Backfill user_metadata in background so future checks are instant
           supabase.auth.updateUser({
@@ -129,9 +133,9 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
         const backendRes = await fetchOnboardingStatusFromBackend(accessToken);
         if (backendRes.data?.onboarded) {
           if (activeUser?.id) {
-            await AsyncStorage.setItem(getUserOnboardingKey(activeUser.id), 'true').catch(() => {});
+            await safeSetItem(getUserOnboardingKey(activeUser.id), 'true').catch(() => {});
           }
-          await AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+          await safeSetItem(ONBOARDING_KEY, 'true').catch(() => {});
           return true;
         }
       } catch {
@@ -140,7 +144,7 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
     }
 
     // 6. Fast local fallback if no user was resolvable
-    const localFlag = await AsyncStorage.getItem(ONBOARDING_KEY).catch(() => null);
+    const localFlag = await safeGetItem(ONBOARDING_KEY).catch(() => null);
     if (localFlag === 'true') {
       return true;
     }
@@ -148,7 +152,7 @@ export async function isOnboardingComplete(userCandidate?: any): Promise<boolean
     return false;
   } catch (err) {
     console.warn('[onboarding] isOnboardingComplete caught error:', err);
-    const localFlag = await AsyncStorage.getItem(ONBOARDING_KEY).catch(() => null);
+    const localFlag = await safeGetItem(ONBOARDING_KEY).catch(() => null);
     return localFlag === 'true';
   }
 }
@@ -185,10 +189,10 @@ export async function markOnboardingComplete(): Promise<void> {
 
   // 2. Persist local AsyncStorage flags (both global and user-scoped)
   try {
-    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    await AsyncStorage.setItem(TERMS_ACCEPTED_KEY, timestamp);
+    await safeSetItem(ONBOARDING_KEY, 'true');
+    await safeSetItem(TERMS_ACCEPTED_KEY, timestamp);
     if (activeUser?.id) {
-      await AsyncStorage.setItem(getUserOnboardingKey(activeUser.id), 'true');
+      await safeSetItem(getUserOnboardingKey(activeUser.id), 'true');
     }
   } catch (e) {
     console.warn('[onboarding] Failed to save local onboarding flag:', e);
@@ -229,10 +233,10 @@ export async function markOnboardingComplete(): Promise<void> {
  */
 export async function clearOnboardingFlag(userId?: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(ONBOARDING_KEY);
-    await AsyncStorage.removeItem(TERMS_ACCEPTED_KEY);
+    await safeRemoveItem(ONBOARDING_KEY);
+    await safeRemoveItem(TERMS_ACCEPTED_KEY);
     if (userId) {
-      await AsyncStorage.removeItem(getUserOnboardingKey(userId));
+      await safeRemoveItem(getUserOnboardingKey(userId));
     }
   } catch (e) {
     console.warn('[onboarding] Failed to clear onboarding flag:', e);

@@ -1,9 +1,5 @@
 import { useCallback, useState } from 'react';
 import { Platform } from 'react-native';
-import {
-  GoogleSignin,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
@@ -11,6 +7,46 @@ import { isOnboardingComplete } from './onboarding';
 
 // Required so the OAuth redirect returns to the app cleanly on web.
 WebBrowser.maybeCompleteAuthSession();
+
+/**
+ * Native Google Sign-In (Google Identity Services for Android) lives in a
+ * TurboModule that only exists in builds which ship it (`npx expo run:android`
+ * / EAS builds). In Expo Go the module is absent, and a static import throws
+ * `TurboModuleRegistry.getEnforcing(...): 'RNGoogleSignin' could not be found`
+ * AT IMPORT TIME — crashing every route that imports this file (login and
+ * register then fail with "missing the required default export").
+ *
+ * The package is therefore loaded lazily inside a try/catch:
+ *  - Real builds: native sign-in behaves exactly as before.
+ *  - Expo Go / builds without the module: Android falls back to the same
+ *    browser flow iOS and web already use (both auth screens accept either
+ *    response shape). Nothing is ever faked — see `nativePromptAsync`.
+ */
+type GoogleSigninPackage = typeof import('@react-native-google-signin/google-signin');
+
+let googleSigninPackage: GoogleSigninPackage | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  googleSigninPackage = require('@react-native-google-signin/google-signin') as GoogleSigninPackage;
+} catch (err) {
+  console.warn(
+    '[googleAuth] Native Google Sign-In module unavailable in this build — ' +
+      'using the browser flow instead.',
+    err
+  );
+}
+
+const GoogleSignin = googleSigninPackage?.GoogleSignin ?? null;
+const statusCodes = googleSigninPackage?.statusCodes ?? {
+  SIGN_IN_CANCELLED: -5,
+  SIGN_IN_REQUIRED: -4,
+};
+
+/** True when this build contains the native Google Sign-In module (Android builds). */
+export function isNativeGoogleSignInAvailable(): boolean {
+  return Platform.OS === 'android' && GoogleSignin !== null;
+}
+
 
 /**
  * Google OAuth client IDs — supplied via Expo public env vars so no secrets
@@ -34,7 +70,7 @@ export const googleClientIds = {
 // this file (Supabase auth, registration, onboarding, provisioning) is
 // untouched. iOS and web keep the expo-auth-session browser flow as before
 // and never touch the native SDK.
-if (Platform.OS === 'android') {
+if (Platform.OS === 'android' && GoogleSignin) {
   const webClientId = googleClientIds.web;
   if (webClientId) {
     GoogleSignin.configure({ webClientId });
@@ -67,6 +103,16 @@ export function useGoogleAuthRequest(): [any, any, () => Promise<any>] {
 
   const [nativeResponse, setNativeResponse] = useState<any>(null);
   const nativePromptAsync = useCallback(async () => {
+    if (!GoogleSignin) {
+      // Unreachable in the normal flow (the caller falls back to the browser
+      // prompt when the native module is missing) — but never fake a result.
+      const error = new Error(
+        'Google Sign-In needs a native build. Run `npx expo run:android` — Expo Go cannot load RNGoogleSignin.'
+      );
+      const result = { type: 'error', error };
+      setNativeResponse(result);
+      return result;
+    }
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       await GoogleSignin.signIn();
@@ -82,9 +128,12 @@ export function useGoogleAuthRequest(): [any, any, () => Promise<any>] {
     }
   }, []);
 
-  // Android ignores the browser triple entirely (no redirect involved); the
-  // request above is still built so hook order stays stable across platforms.
-  if (Platform.OS === 'android') {
+  // Android signs in natively ONLY when this build ships the native module
+  // (real dev/prod builds — unchanged behavior). In Expo Go the module is
+  // absent, so fall back to the same browser flow iOS and web use; both auth
+  // screens already accept either response shape (`params.id_token` or
+  // `authentication.idToken`). Hook order stays stable across all paths.
+  if (isNativeGoogleSignInAvailable()) {
     return [webRequest, nativeResponse, nativePromptAsync];
   }
   return [webRequest, webResponse, webPromptAsync];

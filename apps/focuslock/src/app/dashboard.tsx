@@ -557,15 +557,15 @@ function AnimatedAppCard({
           <View style={[styles.appCardDrawer, isLocked && styles.drawerOnDark]}>
             <View style={[styles.drawerDivider, isLocked && styles.drawerDividerLocked]} />
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>REMAINING TODAY</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Remaining today</Text>
               <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(remaining)}</Text>
             </View>
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>DAILY ALLOWANCE</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Daily allowance</Text>
               <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(app.daily_limit_seconds)}</Text>
             </View>
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>NEXT RESET</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Next reset</Text>
               <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{resetLabel}</Text>
             </View>
           </View>
@@ -687,7 +687,7 @@ function AnimatedLimitConfigCard({
               ]}
               numberOfLines={1}
             >
-              {isLocked ? 'LOCKED' : `${formatSeconds(app.daily_limit_seconds)}/day`}
+              {isLocked ? 'Locked' : `${formatSeconds(app.daily_limit_seconds)}/day`}
             </Text>
           </View>
         </View>
@@ -697,19 +697,19 @@ function AnimatedLimitConfigCard({
           <View style={[styles.appCardDrawer, isLocked && styles.drawerOnDark]}>
             <View style={[styles.drawerDivider, isLocked && styles.drawerDividerLocked]} />
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>USED TODAY</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Used today</Text>
               <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(used)}</Text>
             </View>
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>DAILY ALLOWANCE</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Daily allowance</Text>
               <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{formatSeconds(app.daily_limit_seconds)}</Text>
             </View>
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>NEXT RESET</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Next reset</Text>
               <Text style={[styles.drawerValue, isLocked && styles.drawerValueOnDark]}>{resetLabel}</Text>
             </View>
             <View style={styles.drawerRow}>
-              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>RESTRICTION</Text>
+              <Text style={[styles.drawerLabel, isLocked && styles.drawerLabelOnDark]}>Restriction</Text>
               {configWindowOpen ? (
                 <View style={styles.drawerActions}>
                   <TouchableOpacity
@@ -725,7 +725,7 @@ function AnimatedLimitConfigCard({
                   </TouchableOpacity>
                 </View>
               ) : (
-                <Text style={styles.drawerValueLocked}>until {windowOpenLabel}</Text>
+                <Text style={styles.drawerValueLocked}>Until {windowOpenLabel}</Text>
               )}
             </View>
           </View>
@@ -734,10 +734,10 @@ function AnimatedLimitConfigCard({
         <View style={[styles.limitCardFooter, isLocked && styles.limitCardFooterLocked]}>
           <Text style={[styles.lockNotice, isLocked && styles.lockNoticeLocked]}>
             {isLocked
-              ? `Locked • Unlocks at daily reset ${resetLabel}`
+              ? `Locked • resets at ${resetLabel}`
               : configWindowOpen
-              ? `Window open • Configure until ${resetLabel}`
-              : `Restrictions locked • Editable at ${windowOpenLabel} window`}
+              ? `Window open • configure until ${resetLabel}`
+              : `Editing opens at ${windowOpenLabel}`}
           </Text>
         </View>
       </TouchableOpacity>
@@ -1989,8 +1989,8 @@ export default function DashboardScreen() {
                 <View style={styles.tabHeader}>
                   <Text style={styles.tabHeading}>App Limits & Scheduling</Text>
                   <Text style={styles.tabSubheading}>
-                    One daily reset governs every limit. Review your schedule and adjust apps only
-                    during the open configuration window.
+                    One daily reset governs every limit. Edits are allowed only during the open
+                    configuration window.
                   </Text>
                 </View>
 
@@ -2014,8 +2014,8 @@ export default function DashboardScreen() {
                       ]}
                     >
                       {phase === 'RESET_WINDOW'
-                        ? 'CONFIGURATION WINDOW OPEN'
-                        : 'LIMITS ACTIVE & LOCKED'}
+                        ? 'Configuration window open'
+                        : 'Limits active & locked'}
                     </Text>
                   </View>
                   <Text style={styles.phaseCardCountdown}>{countdownText || 'Calculating...'}</Text>
@@ -2057,7 +2057,7 @@ export default function DashboardScreen() {
                   <View style={styles.editorHeaderRow}>
                     <Text style={styles.editorTitle}>Daily Reset Time</Text>
                     {!canEditSchedule && (
-                      <Text style={styles.editorLockText}>🔒 {formatHMS(secondsUntilWindow)}</Text>
+                      <Text style={styles.editorLockText}>Editing in {formatHMS(secondsUntilWindow)}</Text>
                     )}
                   </View>
 
@@ -2132,7 +2132,7 @@ export default function DashboardScreen() {
 
                   {/* AM / PM — own row so narrow screens never overflow */}
                   <View style={styles.meridiemRow}>
-                    <Text style={styles.stepperLabel}>MERIDIEM</Text>
+                    <Text style={styles.stepperLabel}>AM / PM</Text>
                     <TouchableOpacity
                       activeOpacity={0.7}
                       disabled={!canEditSchedule}
@@ -2242,15 +2242,15 @@ export default function DashboardScreen() {
                       <ActivityIndicator size="small" color={colors.accent} />
                     ) : (
                       <Text style={styles.saveScheduleBtnText}>
-                        {isScheduleDirty ? 'Save Schedule' : 'Schedule Saved ✓'}
+                        {isScheduleDirty ? 'Save schedule' : 'Schedule saved'}
                       </Text>
                     )}
                   </TouchableOpacity>
 
                   {!canEditSchedule && (
                     <Text style={styles.editorGateNote}>
-                      Per the anti-impulse rule, the reset schedule can only be changed during the{' '}
-                      {windowMinutes}-minute window ({windowOpenLabel} – {resetLabel}).
+                      Schedule changes are limited to the {windowMinutes}-minute window,{' '}
+                      {windowOpenLabel} – {resetLabel}.
                     </Text>
                   )}
                 </View>
@@ -2271,7 +2271,7 @@ export default function DashboardScreen() {
                   <Text style={styles.scheduleActionBtnText}>
                     {phase === 'RESET_WINDOW'
                       ? "Configure tomorrow's limits"
-                      : `Opens at the ${windowOpenLabel} window`}
+                      : `Editing opens at ${windowOpenLabel}`}
                   </Text>
                 </TouchableOpacity>
 
@@ -2279,7 +2279,7 @@ export default function DashboardScreen() {
                 <Text style={styles.groupSectionLabel}>App Limits</Text>
                 {phase === 'RESET_WINDOW' ? (
                   <View style={styles.windowBanner}>
-                    <Text style={styles.windowBannerTitle}>⚡ Configuration window open</Text>
+                    <Text style={styles.windowBannerTitle}>Configuration window open</Text>
                     <Text style={styles.windowBannerSub}>
                       Restrictions can be removed or changed until {resetLabel}.
                     </Text>
@@ -2290,8 +2290,8 @@ export default function DashboardScreen() {
                       Restrictions locked until {windowOpenLabel}
                     </Text>
                     <Text style={styles.windowBannerLockedSub}>
-                      Removals and limit changes are only permitted during the pre-reset window —
-                      discipline, not willpower.
+                      Limit changes and removals are available only during the {windowMinutes}-minute
+                      pre-reset window.
                     </Text>
                   </View>
                 )}
@@ -2304,7 +2304,7 @@ export default function DashboardScreen() {
                   }}
                   style={styles.addBtn}
                 >
-                  <Text style={styles.addBtnText}>+ Select Application to Limit</Text>
+                  <Text style={styles.addBtnText}>Select apps to limit</Text>
                 </TouchableOpacity>
                 <View style={styles.appsList}>
                   {limits.length === 0 ? (
@@ -2312,9 +2312,9 @@ export default function DashboardScreen() {
                       <View style={styles.emptyIconBadge}>
                         <Image source={require('../../assets/lock.svg')} style={styles.emptyLockImg} contentFit="contain" />
                       </View>
-                      <Text style={styles.emptyTitle}>Zero Distractions Configured</Text>
+                      <Text style={styles.emptyTitle}>No limits configured yet</Text>
                       <Text style={styles.emptySub}>
-                        Protect your time by selecting applications on this device to enforce daily screen-time limits.
+                        Select installed apps to enforce a daily screen-time limit on this device.
                       </Text>
                       <TouchableOpacity
                         activeOpacity={0.85}
@@ -2324,7 +2324,7 @@ export default function DashboardScreen() {
                         }}
                         style={styles.emptyAddBtn}
                       >
-                        <Text style={styles.emptyAddBtnText}>+ Choose from Installed Apps</Text>
+                        <Text style={styles.emptyAddBtnText}>Select apps to limit</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -2346,8 +2346,8 @@ export default function DashboardScreen() {
                 <View style={styles.infoCard}>
                   <Text style={styles.infoTitle}>Why can&apos;t I edit limits anytime?</Text>
                   <Text style={styles.infoBody}>
-                    FocusLock is powered by discipline, not willpower. By only permitting adjustments
-                    during the calm pre-reset window, you make decisions before impulsivity takes over.
+                    Limit changes are only allowed during the pre-reset window, so tomorrow&apos;s limits
+                    are decided ahead of time — calmly, before impulsivity takes over.
                   </Text>
                 </View>
 
@@ -4012,7 +4012,7 @@ function createStyles(C: ThemeColors, isDark: boolean) {
   },
   limitPillTextLocked: {
     color: isDark ? '#FCA5A5' : '#DC2626',
-    letterSpacing: 0.8,
+    letterSpacing: 0.3,
   },
   limitCardFooter: {
     borderTopWidth: 1,
@@ -4128,9 +4128,9 @@ function createStyles(C: ThemeColors, isDark: boolean) {
     gap: 8,
   },
   phaseCardTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.0,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
     color: C.success,
   },
   phaseCardTitleWindow: {

@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1680" viewBox="0 0 1440 1680" fill="none">
+  <defs>
+    <linearGradient id="canvas" x1="100" y1="40" x2="1340" y2="1640" gradientUnits="userSpaceOnUse"><stop stop-color="#0C1422"/><stop offset="1" stop-color="#070B14"/></linearGradient>
+    <linearGradient id="phone" x1="542" y1="210" x2="906" y2="1330" gradientUnits="userSpaceOnUse"><stop stop-color="#111D2B"/><stop offset="1" stop-color="#080E18"/></linearGradient>
+    <linearGradient id="green" x1="645" y1="1050" x2="835" y2="1130" gradientUnits="userSpaceOnUse"><stop stop-color="#A1FF70"/><stop offset="1" stop-color="#55E986"/></linearGradient>
+    <linearGradient id="appIcon" x1="636" y1="569" x2="722" y2="655" gradientUnits="userSpaceOnUse"><stop stop-color="#9D6AFF"/><stop offset="1" stop-color="#FF658B"/></linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 388 -390 0 723 645)" gradientUnits="userSpaceOnUse"><stop stop-color="#76F756" stop-opacity=".14"/><stop offset="1" stop-color="#76F756" stop-opacity="0"/></radialGradient>
+    <filter id="shadow" x="390" y="100" width="680" height="1380" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="30"/></filter>
+    <filter id="soft" x="0" y="0" width="1440" height="1680" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="65"/></filter>
+  </defs>
+  <rect width="1440" height="1680" fill="url(#canvas)"/>
+  <circle cx="259" cy="409" r="220" fill="#76F756" fill-opacity=".08" filter="url(#soft)"/>
+  <circle cx="1247" cy="1128" r="250" fill="#10B981" fill-opacity=".09" filter="url(#soft)"/>
+  <text x="112" y="128" fill="#76F756" font-family="Arial,sans-serif" font-size="17" font-weight="700" letter-spacing="3.4">FOCUSLOCK  /  NATIVE ANDROID</text>
+  <text x="108" y="208" fill="#F0F4FF" font-family="Arial,sans-serif" font-size="57" font-weight="700" letter-spacing="-1.5">A calmer kind of</text>
+  <text x="108" y="274" fill="#F0F4FF" font-family="Arial,sans-serif" font-size="57" font-weight="700" letter-spacing="-1.5">lock screen.</text>
+  <text x="112" y="326" fill="#9AA6BA" font-family="Arial,sans-serif" font-size="21">A refinement of the existing native lock surface</text>
+
+  <!-- side design notes -->
+  <g font-family="Arial,sans-serif">
+    <rect x="102" y="492" width="300" height="174" rx="24" fill="#101A29" stroke="#FFFFFF" stroke-opacity=".10"/>
+    <circle cx="139" cy="535" r="15" fill="#76F756" fill-opacity=".14"/><path d="M132 535h14M139 528v14" stroke="#76F756" stroke-width="2" stroke-linecap="round"/>
+    <text x="166" y="541" fill="#F0F4FF" font-size="19" font-weight="700">Dynamic, not hardcoded</text>
+    <text x="128" y="583" fill="#9AA6BA" font-size="15">Use PackageManager’s real app</text><text x="128" y="608" fill="#9AA6BA" font-size="15">name and icon in this slot.</text>
+    <text x="128" y="641" fill="#76F756" font-size="13" font-weight="700" letter-spacing="1.4">APP NAME  ·  APP ICON</text>
+
+    <rect x="102" y="702" width="300" height="174" rx="24" fill="#101A29" stroke="#FFFFFF" stroke-opacity=".10"/>
+    <circle cx="139" cy="745" r="15" fill="#76F756" fill-opacity=".14"/><path d="M131 749a8 8 0 1 1 2 3" stroke="#76F756" stroke-width="2" stroke-linecap="round"/><path d="M131 744v6h6" stroke="#76F756" stroke-width="2" stroke-linecap="round"/>
+    <text x="166" y="751" fill="#F0F4FF" font-size="19" font-weight="700">Make the limit clear</text>
+    <text x="128" y="793" fill="#9AA6BA" font-size="15">Show used time against the</text><text x="128" y="818" fill="#9AA6BA" font-size="15">daily limit at a glance.</text>
+    <text x="128" y="851" fill="#76F756" font-size="13" font-weight="700" letter-spacing="1.4">USED  /  DAILY LIMIT</text>
+
+    <rect x="1038" y="492" width="300" height="174" rx="24" fill="#101A29" stroke="#FFFFFF" stroke-opacity=".10"/>
+    <circle cx="1075" cy="535" r="15" fill="#76F756" fill-opacity=".14"/><path d="M1075 526v9l6 4" stroke="#76F756" stroke-width="2" stroke-linecap="round"/><circle cx="1075" cy="535" r="9" stroke="#76F756" stroke-width="2"/>
+    <text x="1102" y="541" fill="#F0F4FF" font-size="19" font-weight="700">Useful reset info</text>
+    <text x="1064" y="583" fill="#9AA6BA" font-size="15">Format the existing resetAt</text><text x="1064" y="608" fill="#9AA6BA" font-size="15">timestamp in local time.</text>
+    <text x="1064" y="641" fill="#76F756" font-size="13" font-weight="700" letter-spacing="1.4">NEXT LOCAL RESET</text>
+
+    <rect x="1038" y="702" width="300" height="174" rx="24" fill="#101A29" stroke="#FFFFFF" stroke-opacity=".10"/>
+    <circle cx="1075" cy="745" r="15" fill="#76F756" fill-opacity=".14"/><path d="M1068 745h14M1075 738v14" stroke="#76F756" stroke-width="2" stroke-linecap="round"/><path d="M1069 751l4-4 3 3 5-6" stroke="#76F756" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1102" y="751" fill="#F0F4FF" font-size="19" font-weight="700">Honest action</text>
+    <text x="1064" y="793" fill="#9AA6BA" font-size="15">Acknowledge and return to</text><text x="1064" y="818" fill="#9AA6BA" font-size="15">FocusLock; never imply unlock.</text>
+    <text x="1064" y="851" fill="#76F756" font-size="13" font-weight="700" letter-spacing="1.4">LOCK STAYS ACTIVE</text>
+  </g>
+  <!-- phone shadow and body -->
+  <rect x="478" y="370" width="484" height="1048" rx="62" fill="#000" fill-opacity=".55" filter="url(#shadow)"/>
+  <rect x="488" y="344" width="464" height="1074" rx="58" fill="#111722" stroke="#657084" stroke-opacity=".54" stroke-width="2"/>
+  <rect x="502" y="358" width="436" height="1046" rx="47" fill="url(#phone)"/>
+  <rect x="502" y="358" width="436" height="1046" rx="47" fill="url(#glow)"/>
+  <!-- status bar -->
+  <text x="540" y="403" fill="#EAF0F6" font-family="Arial,sans-serif" font-size="15" font-weight="700">9:41</text>
+  <g stroke="#EAF0F6" stroke-width="2" stroke-linecap="round" opacity=".88"><path d="M843 392v9M849 389v12M855 386v15"/><path d="M865 391c5-5 11-5 16 0M868 395c3-3 7-3 10 0M873 399h1"/></g><rect x="891" y="388" width="23" height="13" rx="3" stroke="#EAF0F6" stroke-width="1.7"/><rect x="914" y="392" width="2.5" height="5" rx="1" fill="#EAF0F6"/><rect x="894" y="391" width="16" height="7" rx="1.5" fill="#76F756"/>
+  <!-- wordmark -->
+  <rect x="538" y="435" width="38" height="38" rx="12" fill="#76F756" fill-opacity=".13" stroke="#76F756" stroke-opacity=".28"/>
+  <path d="M548 446h18v4h-13v4h11v4h-11v6h-5z" fill="#76F756"/>
+  <text x="586" y="460" fill="#F0F4FF" font-family="Arial,sans-serif" font-size="18" font-weight="700">FocusLock</text>
+  <rect x="781" y="438" width="129" height="30" rx="15" fill="#76F756" fill-opacity=".1" stroke="#76F756" stroke-opacity=".22"/>
+  <circle cx="798" cy="453" r="4" fill="#76F756"/><text x="809" y="458" fill="#B9F8AA" font-family="Arial,sans-serif" font-size="10" font-weight="700" letter-spacing="1.2">LIMIT REACHED</text>
+
+  <!-- app identity -->
+  <rect x="674" y="504" width="88" height="88" rx="26" fill="url(#appIcon)"/>
+  <rect x="692" y="522" width="52" height="52" rx="17" stroke="#FFF" stroke-opacity=".94" stroke-width="3"/>
+  <circle cx="718" cy="548" r="11" stroke="#FFF" stroke-opacity=".94" stroke-width="3"/><circle cx="735" cy="531" r="3.5" fill="#FFF"/>
+  <text x="720" y="622" text-anchor="middle" fill="#A7B2C4" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="2">TIME LIMIT FOR</text>
+  <text x="720" y="665" text-anchor="middle" fill="#F4F7FC" font-family="Arial,sans-serif" font-size="37" font-weight="700" letter-spacing="-1">App name</text>
+  <text x="720" y="697" text-anchor="middle" fill="#AAB5C7" font-family="Arial,sans-serif" font-size="16">Your daily limit is up.</text>
+
+  <!-- usage panel -->
+  <rect x="540" y="735" width="360" height="236" rx="25" fill="#111B2A" stroke="#FFFFFF" stroke-opacity=".10"/>
+  <text x="566" y="776" fill="#A8B3C5" font-family="Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="1.5">TODAY’S APP TIME</text>
+  <text x="566" y="828" fill="#F4F7FC" font-family="Arial,sans-serif" font-size="38" font-weight="700" letter-spacing="-1">1h 30m</text>
+  <text x="700" y="827" fill="#8390A4" font-family="Arial,sans-serif" font-size="17">of 1h 30m</text>
+  <rect x="566" y="853" width="308" height="9" rx="4.5" fill="#FFFFFF" fill-opacity=".09"/><rect x="566" y="853" width="308" height="9" rx="4.5" fill="url(#green)"/>
+  <circle cx="571" cy="909" r="5" fill="#76F756"/><text x="585" y="914" fill="#DDE5EE" font-family="Arial,sans-serif" font-size="14" font-weight="600">Daily limit reached</text>
+  <text x="566" y="947" fill="#94A1B4" font-family="Arial,sans-serif" font-size="14">Resets at 12:00 AM</text>
+
+  <!-- restorative note -->
+  <circle cx="587" cy="1023" r="19" fill="#76F756" fill-opacity=".12"/><path d="M580 1025c8-1 11-6 12-12 4 11 1 19-8 19-4 0-7-3-7-7 0-3 1-5 3-7z" stroke="#76F756" stroke-width="1.8" stroke-linejoin="round"/><text x="619" y="1019" fill="#E5EAF0" font-family="Arial,sans-serif" font-size="15" font-weight="600">Take a breath.</text><text x="619" y="1043" fill="#98A5B7" font-family="Arial,sans-serif" font-size="14">Your focus will be here tomorrow.</text>
+  <!-- primary acknowledgement -->
+  <rect x="540" y="1083" width="360" height="62" rx="19" fill="url(#green)"/>
+  <text x="720" y="1121" text-anchor="middle" fill="#09130C" font-family="Arial,sans-serif" font-size="17" font-weight="700">Return to FocusLock</text>
+  <text x="720" y="1180" text-anchor="middle" fill="#778598" font-family="Arial,sans-serif" font-size="12">This app remains locked until the reset.</text>
+  <rect x="664" y="1377" width="112" height="4" rx="2" fill="#EAF0F6" fill-opacity=".82"/>
+
+  <!-- footer notes -->
+  <path d="M112 1490h1216" stroke="#FFFFFF" stroke-opacity=".12"/>
+  <text x="112" y="1540" fill="#F0F4FF" font-family="Arial,sans-serif" font-size="17" font-weight="700">Design direction</text>
+  <text x="112" y="1575" fill="#98A5B7" font-family="Arial,sans-serif" font-size="15">Calm, direct, and data-led—preserving the existing dark surface and neon-green FocusLock accent.</text>
+  <text x="112" y="1623" fill="#67758A" font-family="Arial,sans-serif" font-size="13">Concept preview only · “App name,” icon, usage, limit, and reset time are illustrative dynamic values.</text>
+</svg>

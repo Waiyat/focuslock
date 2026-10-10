@@ -181,12 +181,24 @@ export default function RegisterScreen() {
     return valid;
   };
 
-  const claimAndRoute = async () => {
+  // Sign-in completed (password or Google). The session claim must never
+  // block the route transition: it runs in the background while the screen
+  // swaps instantly. Register flows route to onboarding (new users complete
+  // onboarding there); login's own handoff decides dashboard vs onboarding.
+  const claimAndRoute = () => {
     try {
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.access_token) {
-        await claimDeviceSession(data.session.access_token, getDeviceName(), getDevicePlatform());
-      }
+      supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (data.session?.access_token) {
+            claimDeviceSession(
+              data.session.access_token,
+              getDeviceName(),
+              getDevicePlatform()
+            ).catch(() => {});
+          }
+        })
+        .catch(() => {});
     } catch {
       /* non-blocking */
     }
@@ -246,8 +258,10 @@ export default function RegisterScreen() {
     }
 
     setShowOtpModal(false);
-    showToast('Account created successfully!', 'success');
-    await claimAndRoute();
+    // Fire-and-forget: the route swaps now (verified toast rides along);
+    // claim + navigation flush before it so nothing waits on them.
+    showToast('Email verified — redirecting…', 'success');
+    claimAndRoute();
     return true;
   };
 
@@ -281,7 +295,9 @@ export default function RegisterScreen() {
         try {
           const { data } = await supabase.auth.getSession();
           if (data.session?.access_token) {
-            await claimDeviceSession(data.session.access_token, getDeviceName(), getDevicePlatform());
+            claimDeviceSession(data.session.access_token, getDeviceName(), getDevicePlatform()).catch(
+              () => {}
+            );
           }
         } catch {
           /* non-blocking */

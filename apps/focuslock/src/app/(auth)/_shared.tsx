@@ -215,3 +215,10 @@ export function OrDivider({ text }: { text: string }) {
     </View>
   );
 }
+
+// Colocated shared helpers — not a navigable screen. The default export only
+// exists so Expo Router's route validation stops warning about this file
+// (same pattern as src/app/settings/_shared.tsx).
+export default function AuthSharedDummy() {
+  return null;
+}

@@ -1,5 +1,13 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Linking,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { SubHeader, useSharedStyles } from './_shared';
@@ -9,60 +17,81 @@ const APP_VERSION = '1.1.5';
 const LAST_UPDATED = 'October 2026';
 const SUPPORT_EMAIL = 'support@waiyatlabs.space';
 
-interface PrivacySection { title: string; body: string }
+interface PrivacySection {
+  title: string;
+  body: string;
+}
 
-// NOTE: Review every section against what FocusLock actually collects and
-// does before publishing. These reflect only what the Terms screen states.
 const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     title: 'Overview',
     body:
-      'This Privacy Policy explains what information FocusLock collects, how it is used, and the choices you have. We aim to collect only what is needed to provide screen-time management and keep your account working.',
+      'FocusLock is a digital wellbeing application developed by Waiyat Labs. This Privacy Policy explains how information is handled when you use FocusLock, including information processed on your device and information needed to operate your account. We aim to limit collection to what is reasonably necessary to provide and maintain the service.',
   },
   {
-    title: 'Information We Collect',
+    title: 'Information We Handle',
     body:
-      'Account information, such as your email address and the credentials you use to sign in. App usage information, such as which apps you select to limit and the time spent in them, which is used to enforce your daily thresholds. Basic technical information, such as device model and app version, to help us fix issues.',
+      'Depending on the features you use, FocusLock may handle your account information, such as your email address and authentication details; your selected app limits and related settings; and app-usage information needed to calculate usage and enforce limits. We may also process technical and diagnostic information, such as your app version and device or session identifiers, to support security, account management, and troubleshooting. The precise information processed depends on the features and services you use.',
   },
   {
-    title: 'Device Permissions',
+    title: 'App Usage and Device Permissions',
     body:
-      'FocusLock uses system permissions such as Usage Stats or Accessibility on Android to measure foreground app usage and display lock overlays when a limit is reached. These permissions are used on your device for enforcement and are not used to read the content of your messages, passwords, or other personal data.',
+      'On Android, FocusLock may require Usage Access and other system permissions, depending on the features available on your device. These permissions allow supported features to identify app usage, calculate time against your limits, and enforce restrictions. FocusLock is designed to manage app usage, not to read the contents of your messages, passwords, or private conversations. You can review or revoke permissions in your device settings, although some features may stop working.',
   },
   {
     title: 'How We Use Information',
     body:
-      'We use information to provide and enforce your limits, maintain your account, improve reliability and performance, respond to support requests, and keep the Application secure. We do not use your information to show third-party advertising.',
+      'Information is used to provide screen-time controls, calculate usage against configured limits, maintain your account and device session, synchronize relevant settings where supported, troubleshoot problems, respond to support requests, and protect the service from misuse. FocusLock is not designed to serve third-party advertisements.',
   },
   {
-    title: 'On-Device Processing',
+    title: 'On-Device Processing and Online Services',
     body:
-      'Usage monitoring and limit enforcement happen on your device. Information that leaves your device is limited to what is needed to operate your account and, where applicable, sync your settings.',
+      'Some app-usage monitoring and enforcement operations are performed locally on your device. Account authentication and supported online features also rely on remote services. For example, FocusLock uses Supabase authentication, and its backend may process account or device-session information needed to provide supported features. Therefore, not all information handled by FocusLock necessarily remains on your device.',
   },
   {
-    title: 'Sharing of Information',
+    title: 'Authentication and Device Sessions',
     body:
-      'We do not sell your personal information. We may share limited information with service providers who help us operate the Application, or when required by law or to protect the rights and safety of users and Waiyat Labs.',
+      'FocusLock may maintain an active-device session associated with your account. The current service is designed to allow one active device session per account; signing in on another device may invalidate the previous session. Authentication and session information is processed to verify access and maintain account security.',
   },
   {
-    title: 'Data Retention and Deletion',
+    title: 'Sharing and Service Providers',
     body:
-      'We keep your information for as long as your account is active or as needed to provide the service. You may request deletion of your account and associated data at any time by contacting us, and we will process the request within a reasonable period.',
+      'Waiyat Labs does not sell your personal information. Information may be processed by service providers that help deliver FocusLock, such as authentication and hosting providers, to the extent needed to operate the service. Information may also be disclosed when required by applicable law or when reasonably necessary to protect users, the service, or legal rights.',
+  },
+  {
+    title: 'Data Retention and Account Deletion',
+    body:
+      'Information is retained for as long as reasonably necessary to provide the service, maintain security, meet legal obligations, and resolve legitimate disputes. You may request account deletion by contacting support. We will review and process the request, subject to applicable legal requirements and any limited retention that is legitimately necessary. Contacting support does not itself confirm that deletion has been completed.',
+  },
+  {
+    title: 'Uninstalling FocusLock',
+    body:
+      'Uninstalling FocusLock removes the application from your device, but it should not be assumed to delete your online account or all information held by online services. Some device-local settings or usage records may also be removed when the app is uninstalled. If you want your account and associated data deleted, contact support to request account deletion.',
   },
   {
     title: 'Security',
     body:
-      'We use reasonable technical and organizational measures to protect your information. No method of storage or transmission is completely secure, so we cannot guarantee absolute security.',
+      'We use reasonable measures intended to protect information handled by FocusLock. However, no application, storage system, or method of transmission can be guaranteed completely secure. You should keep your device secure and avoid sharing your account credentials with others.',
   },
   {
     title: "Children's Privacy",
     body:
-      'FocusLock is not directed to children under 13, and we do not knowingly collect personal information from them. If you believe a child has provided us information, contact us and we will delete it.',
+      'FocusLock is not intended for children under 13. We do not knowingly collect personal information from children under 13. If you believe a child has provided personal information to us, please contact support so the situation can be reviewed and appropriate action taken.',
+  },
+  {
+    title: 'Your Choices',
+    body:
+      'You can manage supported device permissions through your device settings and contact support with questions about your account or a request to delete your data. Revoking permissions may affect app-usage monitoring and enforcement. Available controls may vary by device, operating system, and application version.',
   },
   {
     title: 'Changes to This Policy',
     body:
-      'We may update this Privacy Policy from time to time. When we do, we will update the "Last Updated" date shown above. Continued use of FocusLock after any revision constitutes acceptance of the updated policy.',
+      'This Privacy Policy may be updated as FocusLock changes. When it is revised, we will update the date shown on this screen. Where required, we will provide additional notice of material changes. Please review the policy periodically.',
+  },
+  {
+    title: 'Contact Us',
+    body:
+      'For privacy questions, requests concerning your personal information, or account-deletion requests, contact support@waiyatlabs.space.',
   },
 ];
 
@@ -71,21 +100,49 @@ export default function PrivacyScreen() {
   const { sh, isDark, colors } = useSharedStyles();
   const styles = createPrivacyStyles(colors, isDark);
 
-  const openSupport = () => {
-    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('FocusLock Privacy Inquiry')}`);
+  const openSupport = async () => {
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+      'FocusLock Privacy Inquiry',
+    )}`;
+
+    try {
+      const supported = await Linking.canOpenURL(url);
+
+      if (!supported) {
+        Alert.alert(
+          'Email unavailable',
+          `Please email ${SUPPORT_EMAIL} directly.`,
+        );
+        return;
+      }
+
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(
+        'Unable to open email',
+        `Please email ${SUPPORT_EMAIL} directly.`,
+      );
+    }
   };
 
   return (
     <SafeAreaView style={sh.safe} edges={['top']}>
       <SubHeader title="Privacy Policy" onBack={() => router.back()} />
-      <ScrollView style={sh.scroll} contentContainerStyle={sh.content} showsVerticalScrollIndicator={false}>
+
+      <ScrollView
+        style={sh.scroll}
+        contentContainerStyle={sh.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.wrap}>
-          {/* Intro */}
           <View style={styles.introCard}>
             <Text style={styles.introTitle}>FocusLock Privacy Policy</Text>
+
             <Text style={styles.introBody}>
-              Your focus is personal. This policy describes what information FocusLock handles and how we protect it.
+              Your focus is personal. Learn what information FocusLock handles,
+              why it is needed, and how to contact us about your privacy.
             </Text>
+
             <View style={styles.metaRow}>
               <Text style={styles.metaText}>Version {APP_VERSION}</Text>
               <View style={styles.metaDot} />
@@ -93,9 +150,12 @@ export default function PrivacyScreen() {
             </View>
           </View>
 
-          {PRIVACY_SECTIONS.map((section, i) => (
+          {PRIVACY_SECTIONS.map((section, index) => (
             <View key={section.title}>
-              <Text style={sh.sectionLabel}>{`${i + 1}. ${section.title}`}</Text>
+              <Text style={sh.sectionLabel}>
+                {`${index + 1}. ${section.title}`}
+              </Text>
+
               <View style={sh.card}>
                 <View style={styles.sectionBodyWrap}>
                   <Text style={styles.sectionBody}>{section.body}</Text>
@@ -104,14 +164,23 @@ export default function PrivacyScreen() {
             </View>
           ))}
 
-          {/* Contact */}
-          <Text style={sh.sectionLabel}>Questions</Text>
+          <Text style={sh.sectionLabel}>Privacy Support</Text>
+
           <View style={sh.card}>
-            <TouchableOpacity style={sh.row} onPress={openSupport} activeOpacity={0.6}>
+            <TouchableOpacity
+              style={sh.row}
+              onPress={openSupport}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Email FocusLock privacy support"
+            >
               <View style={sh.rowBody}>
-                <Text style={[sh.rowLabel, { color: colors.accentText }]}>Contact Support</Text>
+                <Text style={[sh.rowLabel, { color: colors.accentText }]}>
+                  Contact Support
+                </Text>
                 <Text style={sh.rowSub}>{SUPPORT_EMAIL}</Text>
               </View>
+
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
           </View>
@@ -193,6 +262,7 @@ function createPrivacyStyles(C: ThemeColors, isDark: boolean) {
       lineHeight: 18,
       marginHorizontal: 32,
       marginTop: 4,
+      marginBottom: 16,
     },
   });
 }
