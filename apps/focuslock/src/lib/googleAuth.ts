@@ -1,3 +1,9 @@
+import { useCallback, useState } from 'react';
+import { Platform } from 'react-native';
+import {
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from './supabase';
@@ -20,22 +26,68 @@ export const googleClientIds = {
   android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
 };
 
+// Android signs in through Google Identity Services for Android (native),
+// not the browser: no OAuth redirect is involved, so none of Google's
+// redirect-URI policies apply. Google's documented ID-token pattern
+// (requestIdToken) mints the token with aud = the Web client ID, which is
+// exactly what Supabase's signInWithIdToken below verifies — so the rest of
+// this file (Supabase auth, registration, onboarding, provisioning) is
+// untouched. iOS and web keep the expo-auth-session browser flow as before
+// and never touch the native SDK.
+if (Platform.OS === 'android') {
+  const webClientId = googleClientIds.web;
+  if (webClientId) {
+    GoogleSignin.configure({ webClientId });
+  }
+}
+
 /** True when at least one Google client id is configured. */
 export function isGoogleConfigured(): boolean {
   return Boolean(googleClientIds.web || googleClientIds.ios || googleClientIds.android);
 }
 
 /**
- * Builds the Google ID-token auth request. Used by both login and register
+ * Builds the Google sign-in prompt. Used by both login and register
  * screens — one "Continue with Google" covers sign-in AND sign-up.
+ *
+ * Android uses native Google Identity Services: `promptAsync` signs in via
+ * Play Services, reads the ID token, and resolves the same response contract
+ * as the browser flow (`type` + ID token at `authentication.idToken`), which
+ * the screens already forward to `completeGoogleSignIn` unchanged.
+ * iOS and web keep the expo-auth-session browser flow exactly as before.
  */
-export function useGoogleAuthRequest() {
-  return Google.useIdTokenAuthRequest({
-    clientId: googleClientIds.web,
-    webClientId: googleClientIds.web,
-    iosClientId: googleClientIds.ios,
-    androidClientId: googleClientIds.android,
-  });
+export function useGoogleAuthRequest(): [any, any, () => Promise<any>] {
+  const [webRequest, webResponse, webPromptAsync] =
+    Google.useIdTokenAuthRequest({
+      clientId: googleClientIds.web,
+      webClientId: googleClientIds.web,
+      iosClientId: googleClientIds.ios,
+      androidClientId: googleClientIds.android,
+    });
+
+  const [nativeResponse, setNativeResponse] = useState<any>(null);
+  const nativePromptAsync = useCallback(async () => {
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      await GoogleSignin.signIn();
+      const { idToken } = await GoogleSignin.getTokens();
+      const result = { type: 'success', authentication: { idToken } };
+      setNativeResponse(result);
+      return result;
+    } catch (err: any) {
+      const cancelled = err?.code === statusCodes.SIGN_IN_CANCELLED;
+      const result = { type: cancelled ? 'cancel' : 'error', error: err };
+      setNativeResponse(result);
+      return result;
+    }
+  }, []);
+
+  // Android ignores the browser triple entirely (no redirect involved); the
+  // request above is still built so hook order stays stable across platforms.
+  if (Platform.OS === 'android') {
+    return [webRequest, nativeResponse, nativePromptAsync];
+  }
+  return [webRequest, webResponse, webPromptAsync];
 }
 
 /**

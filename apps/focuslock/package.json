@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@react-native-google-signin/google-signin": "^16.1.5",
     "clsx": "^2.1.1",
     "expo": "~57.0.25",
     "expo-asset": "~57.0.18",
